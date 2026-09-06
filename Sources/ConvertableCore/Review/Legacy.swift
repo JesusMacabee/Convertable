@@ -124,6 +124,51 @@ public struct SupersedeMatcher {
         return created
     }
 
+    /// Undoes a premature supersede: legacy rows marked superseded with no Music ID get their files restored from
+    /// quarantine and their proposals set back to "approved", so the next Music-side pass maps IDs, carries stats,
+    /// removes the entries and quarantines the files properly. Returns (restored, proposals re-armed).
+    public static func repairUnmappedSupersedes(store: Store, quarantineRoot: String) throws -> (restored: Int, rearmed: Int) {
+        let rows = try store.db.query("SELECT id, root, rel_path FROM legacy_files WHERE superseded_at IS NOT NULL AND music_persistent_id IS NULL") { ($0.int(0)!, $0.text(1)!, $0.text(2)!) }
+        var restored = 0
+        let fm = FileManager.default
+        for (id, root, rel) in rows {
+            let original = root + "/" + rel
+            let tail = rel.split(separator: "/").suffix(3).joined(separator: "/")
+            var found: String?
+            if let dates = try? fm.contentsOfDirectory(atPath: quarantineRoot) {
+                for d in dates.sorted().reversed() {
+                    let base = quarantineRoot + "/" + d + "/legacy/" + tail
+                    if fm.fileExists(atPath: base) { found = base; break }
+                    let ns = base as NSString
+                    for n in 2...9 { let alt = ns.deletingPathExtension + " (\(n))." + ns.pathExtension; if fm.fileExists(atPath: alt) { found = alt; break } }
+                    if found != nil { break }
+                }
+            }
+            if !fm.fileExists(atPath: original), let found {
+                try fm.createDirectory(atPath: (original as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+                try fm.moveItem(atPath: found, toPath: original)
+                restored += 1
+            }
+            if fm.fileExists(atPath: original) { try store.db.run("UPDATE legacy_files SET superseded_at=NULL WHERE id=?", [.integer(id)]) }
+        }
+        var rearmed = 0
+        for p in try store.proposals(states: ["done", "failed", "approved"]) where p.kind == "supersede" {
+            let ids = p.items.compactMap(\.legacyID)
+            guard !ids.isEmpty else { continue }
+            let marks = ids.map { _ in "?" }.joined(separator: ",")
+            let unmapped = try store.db.scalar("SELECT COUNT(*) FROM legacy_files WHERE id IN (\(marks)) AND superseded_at IS NULL AND music_persistent_id IS NULL", ids.map { .integer($0) })
+            if case let .integer(n)? = unmapped, n > 0 {
+                let items: [Store.ProposalItem] = try store.db.query("SELECT id, root, rel_path, size FROM legacy_files WHERE id IN (\(marks))", ids.map { .integer($0) }) { r in
+                    .init(outputID: nil, legacyID: r.int(0)!, relPath: r.text(1)! + "/" + r.text(2)!, musicPersistentID: nil, bytes: r.int(3) ?? 0, counterpartPersistentID: p.items.first { $0.legacyID == r.int(0)! }?.counterpartPersistentID)
+                }
+                let json = String(decoding: try JSONEncoder().encode(items), as: UTF8.self)
+                try store.db.run("UPDATE proposals SET state='approved', items_json=?, error=NULL, done_at=NULL WHERE id=?", [.text(json), .integer(p.id)])
+                rearmed += 1
+            }
+        }
+        return (restored, rearmed)
+    }
+
     func coveredLegacyIDs() throws -> Set<Int64> {
         var ids: Set<Int64> = []
         for p in try store.proposals(states: ["pending", "approved", "dismissed"]) where p.kind == "supersede" { for i in p.items { if let l = i.legacyID { ids.insert(l) } } }
@@ -141,14 +186,62 @@ public struct SupersedeMatcher {
         return n
     }
 
+    /// Maps legacy rows that still lack a Music ID by metadata (album + artist + title). Path mapping cannot
+    /// reach entries whose files are missing, and Music keeps a restored file marked missing until it re-checks it.
+    /// With `deadOnly`, only entries Music reports as missing are considered — the safe choice when cleaning up.
+    @discardableResult
+    public static func mapMusicIDsByMetadata(store: Store, bridge: MusicBridge, deadOnly: Bool, onlyIDs: [Int64]? = nil) throws -> Int {
+        var sql = "SELECT id, album_artist, album, title_norm FROM legacy_files WHERE music_persistent_id IS NULL AND album IS NOT NULL AND album_artist IS NOT NULL"
+        var params: [Database.Value] = []
+        if let onlyIDs { sql += " AND id IN (\(onlyIDs.map { _ in "?" }.joined(separator: ",")))"; params = onlyIDs.map { .integer($0) } }
+        let rows = try store.db.query(sql, params) { ($0.int(0)!, $0.text(1)!, $0.text(2)!, $0.text(3) ?? "") }
+        var byAlbum: [String: [(Int64, String)]] = [:]
+        var keyMeta: [String: (String, String)] = [:]
+        for (id, artist, album, title) in rows { let k = artist + "\u{1F}" + album; byAlbum[k, default: []].append((id, title)); keyMeta[k] = (artist, album) }
+        // Mirror tracks share titles with the legacy copies they replace; they must never be mistaken for legacy entries.
+        let mirrorIDs = Set(try store.db.query("SELECT music_persistent_id FROM outputs WHERE music_persistent_id IS NOT NULL") { $0.text(0)! })
+        var mapped = 0
+        for (k, items) in byAlbum {
+            let (artist, album) = keyMeta[k]!
+            guard let tracks = try? bridge.albumTracks(album: album, artist: artist) else { continue }
+            var used: Set<String> = []
+            for (id, titleNorm) in items {
+                let candidates = tracks.filter { !used.contains($0.persistentID) && !mirrorIDs.contains($0.persistentID) && (!deadOnly || $0.missing) && Norm.key($0.name) == titleNorm }
+                guard let t = candidates.first(where: \.missing) ?? candidates.first else { continue }
+                used.insert(t.persistentID)
+                try store.db.run("UPDATE legacy_files SET music_persistent_id=? WHERE id=?", [.text(t.persistentID), .integer(id)])
+                mapped += 1
+            }
+        }
+        return mapped
+    }
+
+    /// Cleans up after a supersede whose Music entries were never known: files are already quarantined and the
+    /// entries are dead. Maps them by metadata (dead entries only), carries stats to the counterpart, removes them.
+    public static func removeDeadSupersededEntries(store: Store, bridge: MusicBridge) throws -> (mapped: Int, removed: Int) {
+        let ids = try store.db.query("SELECT id FROM legacy_files WHERE superseded_at IS NOT NULL AND music_persistent_id IS NULL") { $0.int(0)! }
+        guard !ids.isEmpty else { return (0, 0) }
+        let mapped = try mapMusicIDsByMetadata(store: store, bridge: bridge, deadOnly: true, onlyIDs: ids)
+        // Counterparts recorded in the proposals that superseded these rows.
+        var counterpart: [Int64: String] = [:]
+        for p in try store.proposals(states: ["done", "approved"]) where p.kind == "supersede" { for i in p.items { if let l = i.legacyID, let c = i.counterpartPersistentID { counterpart[l] = c } } }
+        var removed = 0
+        for (id, pid) in try store.db.query("SELECT id, music_persistent_id FROM legacy_files WHERE superseded_at IS NOT NULL AND music_persistent_id IS NOT NULL AND id IN (\(ids.map { _ in "?" }.joined(separator: ",")))", ids.map { .integer($0) }, { ($0.int(0)!, $0.text(1)!) }) {
+            if let c = counterpart[id] { try? bridge.copyStats(from: pid, to: c) }
+            do { try bridge.remove(persistentID: pid); removed += 1 } catch { try? store.log("warn", "review", "could not remove dead legacy entry \(pid): \(error)") }
+        }
+        return (mapped, removed)
+    }
+
     /// Applies an approved supersede proposal with the library open: carry stats to the mirror track, remove the
     /// legacy entry from Music, move the legacy file into quarantine. Returns items still to do.
     public static func apply(_ p: Store.Proposal, store: Store, bridge: MusicBridge, quarantineDir: String, roots: [String] = []) -> [Store.ProposalItem] {
         var remaining: [Store.ProposalItem] = []
         var items = p.items
         if items.contains(where: { $0.musicPersistentID == nil && $0.legacyID != nil }) {
-            // Never quarantine a file Music still references: map persistent IDs first.
-            _ = try? mapMusicIDs(store: store, roots: roots, bridge: bridge)
+            // Never quarantine a file Music still references: map persistent IDs first. Per-album metadata lookup
+            // (a few Apple events) rather than a walk of the whole library (thousands).
+            _ = try? mapMusicIDsByMetadata(store: store, bridge: bridge, deadOnly: false, onlyIDs: items.compactMap(\.legacyID))
             items = items.map { i in
                 var i = i
                 if i.musicPersistentID == nil, let lid = i.legacyID, case let .text(pid)? = try? store.db.scalar("SELECT music_persistent_id FROM legacy_files WHERE id=?", [.integer(lid)]) { i.musicPersistentID = pid }
@@ -162,8 +255,14 @@ public struct SupersedeMatcher {
                     do { try bridge.remove(persistentID: pid) } catch let e where "\(e)".contains("get") { /* already gone */ }
                 }
                 if FileManager.default.fileExists(atPath: item.relPath) {
-                    let dest = quarantineDir + "/legacy/" + item.relPath.split(separator: "/").suffix(3).joined(separator: "/")
+                    var dest = quarantineDir + "/legacy/" + item.relPath.split(separator: "/").suffix(3).joined(separator: "/")
                     try FileManager.default.createDirectory(atPath: (dest as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+                    // Case-variant duplicates ("For" vs "for") collide on case-insensitive volumes: suffix rather than fail.
+                    var n = 2
+                    while FileManager.default.fileExists(atPath: dest) {
+                        let ns = (quarantineDir + "/legacy/" + item.relPath.split(separator: "/").suffix(3).joined(separator: "/")) as NSString
+                        dest = ns.deletingPathExtension + " (\(n))." + ns.pathExtension; n += 1
+                    }
                     try FileManager.default.moveItem(atPath: item.relPath, toPath: dest)
                 }
                 if let lid = item.legacyID { try store.db.run("UPDATE legacy_files SET superseded_at=? WHERE id=?", [.real(Date().timeIntervalSince1970), .integer(lid)]) }

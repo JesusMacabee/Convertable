@@ -165,7 +165,9 @@ public actor AppController {
             var outcome = MusicImporter.Outcome()
             let ready = importer.libraryReady()
             if case .success = ready {
-                if !(await self.reconciledThisLaunch) {
+                // Reconciling walks the whole library (~8 min for 13k tracks): only when an output has lost its Music ID.
+                let lostIDs = (try? self.store.db.scalar("SELECT COUNT(*) FROM outputs WHERE music_added_at IS NOT NULL AND music_persistent_id IS NULL")) == .integer(0) ? false : true
+                if !(await self.reconciledThisLaunch), lostIDs {
                     if let r = try? importer.reconcile() {
                         try? self.store.log("info", "music", "reconciled with Music: \(r.matched) matched, \(r.unknownInMirror) unknown files under the mirror")
                     }

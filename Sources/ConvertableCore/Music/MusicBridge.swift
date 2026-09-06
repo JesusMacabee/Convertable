@@ -90,25 +90,49 @@ public struct MusicBridge: Sendable {
 
     /// Every file track's persistent ID and path. Used to reconcile after a restart or a manual import.
     public func fileTracks() throws -> [(persistentID: String, path: String)] {
+        // Per-track location reads: the bulk form throws as soon as any single track's file is missing.
         let out = try runner.run("""
         tell application "Music"
-            set ids to persistent ID of every file track of library playlist 1
-            set locs to location of every file track of library playlist 1
+            set ts to every file track of library playlist 1
             set acc to {}
-            repeat with i from 1 to count of ids
+            repeat with t in ts
                 set p to ""
                 try
-                    set p to POSIX path of (item i of locs as alias)
+                    set p to POSIX path of (location of t as alias)
                 end try
-                set end of acc to (item i of ids) & \(Self.quote(Self.sep)) & p
+                set end of acc to (persistent ID of t) & \(Self.quote(Self.sep)) & p
             end repeat
             set AppleScript's text item delimiters to linefeed
             return acc as text
         end tell
-        """, timeout: 600)
+        """, timeout: 900)
         return out.split(separator: "\n").compactMap { line in
             let parts = line.components(separatedBy: Self.sep)
             return parts.count == 2 ? (parts[0], parts[1]) : nil
+        }
+    }
+
+    /// Tracks of one album (by album + artist/album artist) with their titles and whether the file is missing.
+    /// Used to identify legacy entries whose files are gone, which have no usable location any more.
+    public func albumTracks(album: String, artist: String) throws -> [(persistentID: String, name: String, missing: Bool)] {
+        let out = try runner.run("""
+        tell application "Music"
+            set ts to (every file track of library playlist 1 whose album is \(Self.quote(album)) and (artist is \(Self.quote(artist)) or album artist is \(Self.quote(artist))))
+            set acc to {}
+            repeat with t in ts
+                set m to "1"
+                try
+                    if location of t is not missing value then set m to "0"
+                end try
+                set end of acc to (persistent ID of t) & \(Self.quote(Self.sep)) & (name of t) & \(Self.quote(Self.sep)) & m
+            end repeat
+            set AppleScript's text item delimiters to linefeed
+            return acc as text
+        end tell
+        """, timeout: 120)
+        return out.split(separator: "\n").compactMap { line in
+            let parts = line.components(separatedBy: Self.sep)
+            return parts.count == 3 ? (parts[0], parts[1], parts[2] == "1") : nil
         }
     }
 

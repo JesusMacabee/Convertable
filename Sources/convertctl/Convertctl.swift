@@ -378,7 +378,7 @@ struct Music: ParsableCommand {
 // MARK: - Phase 6: review
 
 struct Review: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Removal / supersede proposals.", subcommands: [List.self, Detect.self, Approve.self, Dismiss.self, LegacyIndex.self, LegacyMatch.self])
+    static let configuration = CommandConfiguration(abstract: "Removal / supersede proposals.", subcommands: [List.self, Detect.self, Approve.self, Dismiss.self, LegacyIndex.self, LegacyMatch.self, RepairSupersede.self])
 
     struct List: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Pending and approved proposals.")
@@ -418,6 +418,16 @@ struct Review: AsyncParsableCommand {
             idx.onProgress = { seen, indexed in print("  \(seen) seen, \(indexed) indexed") }
             let r = try await idx.run(shareIO: ShareIO(limit: 4))
             print("legacy: \(r.seen) seen, \(r.indexed) indexed, \(r.removed) removed")
+        }
+    }
+    struct RepairSupersede: ParsableCommand {
+        static let configuration = CommandConfiguration(commandName: "repair-supersede", abstract: "Restore legacy files quarantined before their Music entries were known, and re-arm their proposals.")
+        func run() throws {
+            let s = try Settings.load()
+            let r = try SupersedeMatcher.repairUnmappedSupersedes(store: try openStore(), quarantineRoot: s.mirrorRoot + "/.quarantine")
+            print("restored \(r.restored) files, re-armed \(r.rearmed) proposals — they re-apply on the next Music pass with the library open")
+            let d = try SupersedeMatcher.removeDeadSupersededEntries(store: try openStore(), bridge: MusicBridge())
+            print("dead legacy entries: mapped \(d.mapped) by metadata, removed \(d.removed) from Music")
         }
     }
     struct LegacyMatch: ParsableCommand {
