@@ -21,6 +21,11 @@ public actor AppController {
     private var alerts: [Alert] = []
     private var lastVolumeStatus: VolumeStatus?
     private var learnedRatio: Double?   // real out/in for lossless transcodes, once known
+    private var musicTask: Task<Void, Never>?
+    private var musicImportDisabled: String?
+    private var musicPendingCache = 0
+    private var reconciledThisLaunch = false
+    public var musicBridge = MusicBridge()
 
     public init(settings: Settings, store: Store, bus: EventBus = EventBus()) {
         self.settings = settings
@@ -83,6 +88,55 @@ public actor AppController {
             // Steady state: process whatever is eligible under the configured budget.
             startBatch(Selection(mode: .size, cap: settings.batchBudgetBytes), exceedCap: false)
         }
+        importIntoMusic()
+    }
+
+    // MARK: Music import
+
+    private func makeImporter() -> MusicImporter? {
+        guard let profile = Profile.named(settings.profileID) else { return nil }
+        return MusicImporter(store: store, settings: settings, profile: profile, bridge: musicBridge)
+    }
+
+    /// Drains complete albums into Music when the configured library is open. Never runs two at once.
+    public func importIntoMusic(force: Bool = false) {
+        guard musicTask == nil, let importer = makeImporter() else { return }
+        if let reason = musicImportDisabled, !force {
+            _ = reason; return
+        }
+        if force { musicImportDisabled = nil; alerts.removeAll { $0.id == "music-disabled" } }
+        musicTask = Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+            var outcome = MusicImporter.Outcome()
+            let ready = importer.libraryReady()
+            if case .success = ready {
+                if !(await self.reconciledThisLaunch) {
+                    if let r = try? importer.reconcile() {
+                        try? self.store.log("info", "music", "reconciled with Music: \(r.matched) matched, \(r.unknownInMirror) unknown files under the mirror")
+                    }
+                    await self.setReconciled()
+                }
+                outcome = importer.drain()
+            }
+            await self.musicDrainFinished(outcome, ready: ready)
+        }
+    }
+
+    private func setReconciled() { reconciledThisLaunch = true }
+
+    private func musicDrainFinished(_ o: MusicImporter.Outcome, ready: Result<Void, MusicError>) async {
+        musicTask = nil
+        musicPendingCache = makeImporter()?.pendingCount() ?? 0
+        if let reason = o.disabledReason {
+            musicImportDisabled = reason
+            raise(Alert(id: "music-disabled", level: "error", message: reason, action: "enableMusicImport"))
+        }
+        if case let .failure(e) = ready, musicPendingCache > 0 {
+            raise(Alert(id: "music-gate", level: "info", message: "\(musicPendingCache) track(s) ready for Music — waiting: \(e.description)", action: nil))
+        } else {
+            alerts.removeAll { $0.id == "music-gate" }
+        }
+        if o.added > 0 || o.failed > 0 { await publishStatus() }
     }
 
     private func autoContinueAllowed(_ now: Date) -> Bool {
@@ -103,6 +157,8 @@ public actor AppController {
         case let .startBatch(sel, exceed): startBatch(sel, exceedCap: exceed)
         case .stop: requestStop(); if batch != nil { state = .paused }
         case let .pin(dir, pinned): try store.pin(dir, pinned: pinned)
+        case .importNow: importIntoMusic()
+        case .enableMusicImport: importIntoMusic(force: true)
         }
         await publishStatus()
     }
@@ -206,6 +262,7 @@ public actor AppController {
             await bus.publish(.activity(row))
         case .albumFinished:
             b.albumsDone += 1; b.currentAlbum = nil
+            importIntoMusic()   // a finished album can go straight to Music
         case .message: break
         }
         batch = b
@@ -245,7 +302,8 @@ public actor AppController {
                               lastFullScan: (try? store.lastFinishedScan(.full))?.finishedAt,
                               lastIncrementalScan: (try? store.lastFinishedScan(.incremental))?.finishedAt,
                               nextScan: nextScanAt?.timeIntervalSince1970, scanInProgress: scanProgressText,
-                              pendingApprovals: 0, alerts: alerts, shareLimit: 0, shareInFlight: 0,
+                              pendingApprovals: 0, musicPending: musicPendingCache, musicImportDisabled: musicImportDisabled,
+                              alerts: alerts, shareLimit: 0, shareInFlight: 0,
                               uptimeSeconds: Date().timeIntervalSince(startedAt))
     }
 

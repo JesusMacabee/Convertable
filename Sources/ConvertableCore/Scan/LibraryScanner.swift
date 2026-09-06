@@ -140,16 +140,24 @@ public final class LibraryScanner {
             onProgress?(progress)
         }
         // Second look at anything seen only once: confirms settled files, catches ones still being written.
-        for f in try store.filesAwaitingConfirmation() {
-            if isCancelled() { throw Failure.cancelled }
-            let url = URL(fileURLWithPath: root + "/" + f.relPath)
-            guard let v = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]), v.isRegularFile == true else {
-                try store.markFileMissing(relPath: f.relPath, now: now); progress.missing += 1; continue
+        // Batched so a first run over a whole library (tens of thousands) still completes in one scan.
+        var confirmed: Set<Int64> = []
+        while true {
+            let pending = try store.filesAwaitingConfirmation().filter { !confirmed.contains($0.id) }
+            if pending.isEmpty { break }
+            for f in pending {
+                confirmed.insert(f.id)
+                if isCancelled() { throw Failure.cancelled }
+                let url = URL(fileURLWithPath: root + "/" + f.relPath)
+                guard let v = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]), v.isRegularFile == true else {
+                    try store.markFileMissing(relPath: f.relPath, now: now); progress.missing += 1; continue
+                }
+                let r = try store.seenFile(relPath: f.relPath, artistDir: f.artistDir, albumDir: f.albumDir, ext: f.ext, kind: f.kind, codec: f.codec,
+                                           size: Int64(v.fileSize ?? 0), mtime: v.contentModificationDate?.timeIntervalSince1970 ?? 0, scanID: scan.id, now: now)
+                progress.files += 1
+                switch r { case .changed: progress.changed += 1; case .unchanged, .reappeared: progress.unchanged += 1; case .added: progress.added += 1 }
             }
-            let r = try store.seenFile(relPath: f.relPath, artistDir: f.artistDir, albumDir: f.albumDir, ext: f.ext, kind: f.kind, codec: f.codec,
-                                       size: Int64(v.fileSize ?? 0), mtime: v.contentModificationDate?.timeIntervalSince1970 ?? 0, scanID: scan.id, now: now)
-            progress.files += 1
-            switch r { case .changed: progress.changed += 1; case .unchanged, .reappeared: progress.unchanged += 1; case .added: progress.added += 1 }
+            onProgress?(progress)
         }
         try store.finishScan(scan.id, now: clock())
         onProgress?(progress)

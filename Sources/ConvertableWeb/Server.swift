@@ -74,6 +74,8 @@ public struct WebServer: Sendable {
             return try self.json(await self.controller.status())
         }
         api.post("stop") { _, _ in try await self.controller.perform(.stop); return try self.json(await self.controller.status()) }
+        api.post("music/import") { _, _ in try await self.controller.perform(.importNow); return try self.json(await self.controller.status()) }
+        api.post("music/enable") { _, _ in try await self.controller.perform(.enableMusicImport); return try self.json(await self.controller.status()) }
         api.post("scan") { req, ctx in
             struct Body: Decodable { var full: Bool? }
             let b = try? await req.decode(as: Body.self, context: ctx)

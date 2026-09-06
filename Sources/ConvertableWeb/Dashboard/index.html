@@ -114,6 +114,7 @@ form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 
       <button id="btnScan">Scan now</button>
       <button id="btnStop" class="danger" disabled>Stop after current tracks</button>
       <button id="btnNext" class="primary" disabled>Start next batch</button>
+      <button id="btnImport">Import into Music now</button>
       <span class="hint" id="nextHint"></span>
     </div>
   </div>
@@ -232,7 +233,7 @@ function renderStatus(s) {
   $('#stateDot').className = 'dot ' + s.state;
   $('#stateText').textContent = labels[s.state] || s.state;
   $('#volInd').innerHTML = (s.volumeAvailable ? '● ' : '○ ') + '<b>' + esc(s.volume) + '</b>';
-  $('#libInd').innerHTML = s.musicLibraryOpen ? '● Music: <b>iPod library open</b>' : (s.musicRunning ? '○ Music: <b>other library open</b>' : '○ Music: <b>not running</b>');
+  $('#libInd').innerHTML = (s.musicLibraryOpen ? '● Music: <b>iPod library open</b>' : (s.musicRunning ? '○ Music: <b>other library open</b>' : '○ Music: <b>not running</b>')) + (s.musicPending ? ` · <b>${s.musicPending}</b> waiting for import` : '');
   const L = s.library;
   $('#libTracks').textContent = L.tracks.toLocaleString() + ' tracks';
   $('#libDetail').textContent = `${L.artists} artists · ${L.albums} albums · ${fmtBytes(L.bytes)} · ${L.lossless.toLocaleString()} lossless / ${L.lossy.toLocaleString()} lossy` + (L.missing ? ` · ${L.missing} missing` : '');
@@ -242,8 +243,9 @@ function renderStatus(s) {
   $('#mirroredDetail').textContent = L.tracks ? Math.round(100 * L.mirrored / L.tracks) + '% of library' : '';
   $('#scanState').textContent = s.scanInProgress ? 'Scanning…' : (s.lastIncrementalScan || s.lastFullScan ? ago(Math.max(s.lastIncrementalScan || 0, s.lastFullScan || 0)) : 'never');
   $('#scanDetail').textContent = s.scanInProgress ? s.scanInProgress : `full ${ago(s.lastFullScan)} · next check ${s.nextScan ? fmtTime(s.nextScan) : '—'}`;
-  $('#alerts').innerHTML = s.alerts.map(a => `<div class="alert ${a.level}"><span>${esc(a.message)}</span><button class="x" data-dismiss="${esc(a.id)}">Dismiss</button></div>`).join('');
+  $('#alerts').innerHTML = s.alerts.map(a => `<div class="alert ${a.level}"><span>${esc(a.message)}</span>${a.action === 'enableMusicImport' ? '<button class="primary" data-enable="1">I fixed it — resume imports</button>' : ''}<button class="x" data-dismiss="${esc(a.id)}">Dismiss</button></div>`).join('');
   $$('#alerts [data-dismiss]').forEach(b => b.onclick = () => api('/alerts/dismiss', { method: 'POST', body: { id: b.dataset.dismiss } }).then(renderStatus));
+  $$('#alerts [data-enable]').forEach(b => b.onclick = () => api('/music/enable', { method: 'POST' }).then(renderStatus));
   renderBatch(s.batch);
   $('#btnStop').disabled = !s.batch;
   $('#btnNext').disabled = !!s.batch || !s.volumeAvailable || L.backlogAlbums === 0;
@@ -285,6 +287,7 @@ function connect() {
 }
 $('#btnScan').onclick = () => api('/scan', { method: 'POST', body: { full: false } }).then(renderStatus);
 $('#btnStop').onclick = () => api('/stop', { method: 'POST' }).then(renderStatus);
+$('#btnImport').onclick = () => api('/music/import', { method: 'POST' }).then(renderStatus);
 $('#btnNext').onclick = () => api('/batch', { method: 'POST', body: { selection: { mode: { size: {} }, cap: settingsCache?.batchBudgetBytes ?? null, ignoreSettle: false }, exceedCap: false } }).then(renderStatus);
 
 // ---- convert picker

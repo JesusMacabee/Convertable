@@ -128,6 +128,12 @@ public enum Schema {
         );
         CREATE INDEX activity_at ON activity(at);
         """,
+        // v2 — Music import bookkeeping (Phase 4)
+        """
+        ALTER TABLE outputs ADD COLUMN music_attempts INTEGER;
+        ALTER TABLE outputs ADD COLUMN music_error TEXT;
+        CREATE INDEX outputs_music ON outputs(music_persistent_id);
+        """,
     ]
 
     public static var currentVersion: Int { migrations.count }

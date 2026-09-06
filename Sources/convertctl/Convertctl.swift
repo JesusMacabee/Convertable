@@ -7,7 +7,7 @@ import ConvertableWeb
 struct Convertctl: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Convertable command line — diagnostics and scripting over the same core as the app.",
-        subcommands: [Doctor.self, Config.self, Tags.self, Scan.self, PlanCommand.self, Artists.self, Status.self, Pin.self, Run.self, Serve.self, WebURL.self],
+        subcommands: [Doctor.self, Config.self, Tags.self, Scan.self, PlanCommand.self, Artists.self, Status.self, Pin.self, Run.self, Serve.self, WebURL.self, Music.self],
         defaultSubcommand: Doctor.self)
 }
 
@@ -297,5 +297,79 @@ struct WebURL: ParsableCommand {
     func run() throws {
         let s = try Settings.load()
         print("http://127.0.0.1:\(s.web.port)/?token=\(s.web.token)")
+    }
+}
+
+
+// MARK: - Phase 4: music
+
+struct Music: ParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Music.app bridge: ping, pending, drain, reconcile, tracks, remove.",
+                                                    subcommands: [Ping.self, Pending.self, Drain.self, Reconcile.self, TracksCmd.self, Remove.self])
+
+    struct LibraryOptions: ParsableArguments {
+        @Option(name: .long, help: "Override the configured .musiclibrary path (testing against a throwaway library).") var library: String?
+        @Option(name: .long, help: "Override the mirror root (scratch testing).") var mirror: String?
+        func settings() throws -> Settings {
+            var s = try Settings.load()
+            if let library { s.musicLibraryPath = library }
+            if let mirror { s.mirrorRoot = mirror }
+            return s
+        }
+    }
+
+    struct Ping: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Check Automation permission and which library is open.")
+        @OptionGroup var lib: LibraryOptions
+        func run() throws {
+            let s = try lib.settings()
+            print("Music running: \(MusicPrefs.isRunning)")
+            print("Open library:  \(MusicPrefs.openLibraryURLString?.removingPercentEncoding ?? "?")")
+            print("Configured:    \(s.musicLibraryFileURLString.removingPercentEncoding ?? "")  → \(MusicPrefs.isConfiguredLibraryOpen(s) ? "MATCH" : "different")")
+            print("Version:       \(try MusicBridge().version())")
+        }
+    }
+    struct Pending: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Albums complete and waiting to be added to Music.")
+        @OptionGroup var lib: LibraryOptions
+        func run() throws {
+            let s = try lib.settings()
+            let imp = MusicImporter(store: try openStore(), settings: s, profile: Profile.named(s.profileID)!, bridge: MusicBridge())
+            let albums = try imp.pendingAlbums()
+            for k in albums.keys.sorted() { print("  \(k.relPath)  (\(albums[k]!.count) tracks)") }
+            print("\(albums.values.reduce(0) { $0 + $1.count }) tracks in \(albums.count) complete albums; gate: \(imp.libraryReady())")
+        }
+    }
+    struct Drain: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Add pending complete albums to the open Music library.")
+        @OptionGroup var lib: LibraryOptions
+        @Option(name: .long) var max: Int = 200
+        func run() throws {
+            let s = try lib.settings()
+            let imp = MusicImporter(store: try openStore(), settings: s, profile: Profile.named(s.profileID)!, bridge: MusicBridge())
+            let o = imp.drain(maxTracks: max)
+            print("added \(o.added), failed \(o.failed)")
+            o.messages.forEach { print("  \($0)") }
+            if let d = o.disabledReason { print("DISABLED: \(d)"); throw ExitCode(2) }
+        }
+    }
+    struct Reconcile: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Map Music's file tracks back onto recorded outputs.")
+        @OptionGroup var lib: LibraryOptions
+        func run() throws {
+            let s = try lib.settings()
+            let imp = MusicImporter(store: try openStore(), settings: s, profile: Profile.named(s.profileID)!, bridge: MusicBridge())
+            let r = try imp.reconcile()
+            print("matched \(r.matched) outputs; \(r.unknownInMirror) tracks under the mirror root are not ours")
+        }
+    }
+    struct TracksCmd: ParsableCommand {
+        static let configuration = CommandConfiguration(commandName: "tracks", abstract: "List file tracks (persistent ID and path) in the open library.")
+        func run() throws { for t in try MusicBridge().fileTracks() { print("\(t.persistentID)\t\(t.path)") } }
+    }
+    struct Remove: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Remove one track entry from the open library by persistent ID (the file is untouched).")
+        @Argument var persistentID: String
+        func run() throws { try MusicBridge().remove(persistentID: persistentID); print("removed \(persistentID)") }
     }
 }

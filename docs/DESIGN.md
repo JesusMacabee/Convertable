@@ -1,6 +1,6 @@
 # Convertable — Design & Build Plan
 
-*Status: Phases 0–3 built (scaffold, scanner/planner, pipeline, web dashboard). Last updated 2026-09-05.*
+*Status: Phases 0–4 built (scaffold, scanner/planner, pipeline, web dashboard, Music bridge). Last updated 2026-09-05.*
 
 ## 1. Purpose
 
@@ -272,7 +272,9 @@ Both modes are gated identically; the manual library switching the user plans is
 - **Refresh** after retag: `refresh track`.
 - **Remove** on approved deletion: `delete track` by persistent ID (the file is quarantined by us, not by Music).
 - **Rename/move detection**: same `audio_md5` appears at a new path → treat as move: rename output, then try `set location of track` (keeps play counts/ratings); if Music refuses, remove + re-add and copy rating/play count/last played across first.
-- All AppleScript runs in-process via `NSAppleScript`, serialized, with timeouts and exponential backoff; Music being busy/syncing an iPod is a retry, not a failure.
+- AppleScript runs through `osascript` subprocesses (killable on timeout; Automation permission attaches to the host app), serialized, with backoff; three consecutive failures stop the drain until the next tick. Music being busy/syncing an iPod — or sitting on a modal dialog, which blocks *all* AppleScript until dismissed — is a retry, not a failure.
+- **Measured (Phase 4, throwaway library)**: an in-place `add` round-trips in ~0.4 s; with "Copy files" on it took ~13 s and returned the copied path — which is exactly what the copy-setting detector keys on. `remove`, re-`add`, `reconcile` (9 lost IDs re-matched by path) and `refresh` all verified live. Albums reach Music only when every track that needs work has a verified output.
+- The "Automatically Add to Music" hand-off is *not* implemented: it moves and renames files, which breaks the output→track link the retag/remove/supersede paths depend on. The setting exists but the importer refuses it with an explanation.
 
 ## 12. Review queue (deletes, renames, supersede)
 

@@ -45,6 +45,8 @@ public struct StatusSnapshot: Codable, Equatable, Sendable {
     public var nextScan: Double?
     public var scanInProgress: String?
     public var pendingApprovals: Int
+    public var musicPending: Int
+    public var musicImportDisabled: String?
     public var alerts: [Alert]
     public var shareLimit: Int
     public var shareInFlight: Int
@@ -92,6 +94,8 @@ public enum Command: Codable, Sendable {
     case startBatch(Selection, exceedCap: Bool)
     case stop
     case pin(artistDir: String, pinned: Bool)
+    case importNow
+    case enableMusicImport
 }
 
 /// Pushed over SSE. Kept small; clients refetch details.
