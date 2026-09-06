@@ -21,6 +21,14 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(s, d)
     }
 
+    func testOlderSettingsFileWithMissingKeysLoads() throws {
+        let json = #"{"sourceRoot":"/x","web":{"port":9000,"allowLAN":false,"token":"t"}}"#
+        let s = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
+        XCTAssertEqual(s.sourceRoot, "/x"); XCTAssertEqual(s.web.port, 9000)
+        XCTAssertEqual(s.legacyMediaRoots, Settings().legacyMediaRoots, "new keys take defaults")
+        XCTAssertEqual(s.batchBudgetBytes, nil, "absent optional stays nil")
+    }
+
     func testLibraryURLStringMatchesMusicFormat() {
         var s = Settings()
         s.musicLibraryPath = "/Volumes/PLeX/Music/AAC Music/Music Library.musiclibrary"

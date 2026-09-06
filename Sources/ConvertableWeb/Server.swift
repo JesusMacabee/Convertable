@@ -24,8 +24,15 @@ public struct WebServer: Sendable {
 
     public var localURL: String { "http://127.0.0.1:\(port)/?token=\(token)" }
 
+    /// For the CLI: ServiceLifecycle handles SIGINT/SIGTERM and shuts the server down cleanly.
     public func run() async throws {
         try await buildApplication().runService()
+    }
+
+    /// For the menu bar app: no signal handling — AppKit owns the process lifecycle, and a SIGTERM
+    /// must end the process rather than silently stop the server inside a still-running app.
+    public func runEmbedded() async throws {
+        try await buildApplication().run()
     }
 
     /// The configured application; tests drive it in-process via HummingbirdTesting.

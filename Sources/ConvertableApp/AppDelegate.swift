@@ -26,9 +26,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = StatusItemController(controller: controller, dashboardURL: server.localURL, notifier: notifier)
         notifier.requestPermissionIfBundled()
 
+        // The dashboard server must outlive any single failure (port briefly busy, network stack hiccup): restart with backoff.
         serverTask = Task { [server] in
-            do { try await server!.run() }
-            catch { await MainActor.run { self.statusItem.serverError = "\(error)" } }
+            var delay: UInt64 = 2
+            while !Task.isCancelled {
+                do {
+                    NSLog("Convertable: dashboard server starting on port %d", server!.port)
+                    try await server!.runEmbedded()
+                    NSLog("Convertable: dashboard server stopped")
+                } catch {
+                    NSLog("Convertable: dashboard server failed: %@", "\(error)")
+                    await MainActor.run { self.statusItem.serverError = "\(error) — retrying" }
+                }
+                try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
+                delay = min(delay * 2, 60)
+            }
         }
         Task { await controller.startScheduler() }
 

@@ -79,6 +79,34 @@ public struct Settings: Codable, Equatable, Sendable {
 
     public init() {}
 
+    /// Tolerant decoding: any key missing from an older settings file takes its default, so upgrades never fail to load.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = Settings()
+        sourceRoot = try c.decodeIfPresent(String.self, forKey: .sourceRoot) ?? d.sourceRoot
+        mirrorRoot = try c.decodeIfPresent(String.self, forKey: .mirrorRoot) ?? d.mirrorRoot
+        musicLibraryPath = try c.decodeIfPresent(String.self, forKey: .musicLibraryPath) ?? d.musicLibraryPath
+        shareURL = try c.decodeIfPresent(String.self, forKey: .shareURL)
+        autoMount = try c.decodeIfPresent(Bool.self, forKey: .autoMount) ?? d.autoMount
+        importMethod = try c.decodeIfPresent(ImportMethod.self, forKey: .importMethod) ?? d.importMethod
+        legacyMediaRoots = try c.decodeIfPresent([String].self, forKey: .legacyMediaRoots) ?? d.legacyMediaRoots
+        supersedeEnabled = try c.decodeIfPresent(Bool.self, forKey: .supersedeEnabled) ?? d.supersedeEnabled
+        incrementalScanMinutes = try c.decodeIfPresent(Int.self, forKey: .incrementalScanMinutes) ?? d.incrementalScanMinutes
+        fullScanHour = try c.decodeIfPresent(Int.self, forKey: .fullScanHour) ?? d.fullScanHour
+        fileSettleSeconds = try c.decodeIfPresent(Int.self, forKey: .fileSettleSeconds) ?? d.fileSettleSeconds
+        albumSettleSeconds = try c.decodeIfPresent(Int.self, forKey: .albumSettleSeconds) ?? d.albumSettleSeconds
+        encodeConcurrency = try c.decodeIfPresent(Int.self, forKey: .encodeConcurrency) ?? d.encodeConcurrency
+        shareConcurrencyOverride = try c.decodeIfPresent(Int.self, forKey: .shareConcurrencyOverride)
+        batchBudgetBytes = try c.decodeIfPresent(Int64.self, forKey: .batchBudgetBytes)
+        autoContinue = try c.decodeIfPresent(AutoContinue.self, forKey: .autoContinue) ?? d.autoContinue
+        profileID = try c.decodeIfPresent(String.self, forKey: .profileID) ?? d.profileID
+        artMaxPixels = try c.decodeIfPresent(Int.self, forKey: .artMaxPixels) ?? d.artMaxPixels
+        artJPEGQuality = try c.decodeIfPresent(Double.self, forKey: .artJPEGQuality) ?? d.artJPEGQuality
+        quarantineRetentionDays = try c.decodeIfPresent(Int.self, forKey: .quarantineRetentionDays) ?? d.quarantineRetentionDays
+        web = try c.decodeIfPresent(WebSettings.self, forKey: .web) ?? d.web
+        launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
+    }
+
     // MARK: Persistence
 
     public static var supportDirectory: URL {
