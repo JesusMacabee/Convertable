@@ -7,7 +7,7 @@ import ConvertableWeb
 struct Convertctl: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Convertable command line — diagnostics and scripting over the same core as the app.",
-        subcommands: [Doctor.self, Config.self, Tags.self, Scan.self, PlanCommand.self, Artists.self, Status.self, Pin.self, Run.self, Serve.self, WebURL.self, Music.self],
+        subcommands: [Doctor.self, Config.self, Tags.self, Scan.self, PlanCommand.self, Artists.self, Status.self, Pin.self, Run.self, Serve.self, WebURL.self, Music.self, Review.self],
         defaultSubcommand: Doctor.self)
 }
 
@@ -371,5 +371,42 @@ struct Music: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Remove one track entry from the open library by persistent ID (the file is untouched).")
         @Argument var persistentID: String
         func run() throws { try MusicBridge().remove(persistentID: persistentID); print("removed \(persistentID)") }
+    }
+}
+
+
+// MARK: - Phase 6: review
+
+struct Review: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Removal / supersede proposals.", subcommands: [List.self, Detect.self, Approve.self, Dismiss.self])
+
+    struct List: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Pending and approved proposals.")
+        func run() throws {
+            let ps = try openStore().proposals(states: ["pending", "approved"])
+            for p in ps { print("#\(p.id) [\(p.state)] \(p.kind)  \(p.artistDir)/\(p.albumDir)  — \(p.title) (\(p.items.count) files, \(ByteCount.string(p.bytes)))\n     \(p.reason)") }
+            if ps.isEmpty { print("no proposals") }
+        }
+    }
+    struct Detect: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Run orphan detection now (normally after each scan).")
+        func run() throws {
+            let s = try Settings.load(); let r = Reviewer(store: try openStore(), mirrorRoot: s.mirrorRoot)
+            print("withdrawn \(try r.withdrawStaleProposals()), new proposals \(try r.detectOrphans())")
+        }
+    }
+    struct Approve: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Approve a proposal (files go to quarantine).")
+        @Argument var id: Int64
+        func run() async throws {
+            let s = try Settings.load(); let store = try openStore()
+            let c = AppController(settings: s, store: store)
+            try await c.approve(id)
+            print("approved #\(id): \(try store.proposal(id: id)?.state ?? "?")")
+        }
+    }
+    struct Dismiss: ParsableCommand {
+        @Argument var id: Int64
+        func run() throws { try openStore().setProposalState(id, "dismissed"); print("dismissed #\(id)") }
     }
 }

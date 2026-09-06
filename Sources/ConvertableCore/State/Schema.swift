@@ -134,6 +134,28 @@ public enum Schema {
         ALTER TABLE outputs ADD COLUMN music_error TEXT;
         CREATE INDEX outputs_music ON outputs(music_persistent_id);
         """,
+        // v3 — review queue (Phase 6)
+        """
+        ALTER TABLE source_files ADD COLUMN missing_full_scans INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE outputs ADD COLUMN music_refresh_pending INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE outputs ADD COLUMN music_relocate_pending INTEGER NOT NULL DEFAULT 0;
+        CREATE TABLE proposals (
+            id          INTEGER PRIMARY KEY,
+            kind        TEXT NOT NULL CHECK (kind IN ('remove','supersede')),
+            artist_dir  TEXT NOT NULL,
+            album_dir   TEXT NOT NULL,
+            title       TEXT NOT NULL,
+            reason      TEXT NOT NULL,
+            items_json  TEXT NOT NULL,
+            bytes       INTEGER NOT NULL DEFAULT 0,
+            created_at  REAL NOT NULL,
+            state       TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','approved','dismissed','done','failed')),
+            decided_at  REAL,
+            done_at     REAL,
+            error       TEXT
+        );
+        CREATE INDEX proposals_state ON proposals(state);
+        """,
     ]
 
     public static var currentVersion: Int { migrations.count }

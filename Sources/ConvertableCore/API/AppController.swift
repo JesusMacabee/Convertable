@@ -81,7 +81,7 @@ public actor AppController {
             let lastAny = (try? store.lastFinishedScan())?.finishedAt
             let dueIncremental = lastAny.map { now.timeIntervalSince1970 - $0 >= Double(settings.incrementalScanMinutes * 60) } ?? true
             let fullDue = lastFull.map { now.timeIntervalSince1970 - $0 >= 20 * 3600 && Calendar.current.component(.hour, from: now) == settings.fullScanHour } ?? true
-            if fullDue { scan(full: true) } else if dueIncremental { scan(full: false) }
+            if fullDue { scan(full: true); await dailyMaintenance() } else if dueIncremental { scan(full: false) }
             nextScanAt = now.addingTimeInterval(Double(settings.incrementalScanMinutes * 60))
         }
         if batchTask == nil, scanTask == nil, autoContinueAllowed(now) {
@@ -89,6 +89,33 @@ public actor AppController {
             startBatch(Selection(mode: .size, cap: settings.batchBudgetBytes), exceedCap: false)
         }
         importIntoMusic()
+    }
+
+    // MARK: Review
+
+    public func proposals() -> [Store.Proposal] { (try? store.proposals(states: ["pending", "approved"])) ?? [] }
+
+    public func approve(_ id: Int64) async throws {
+        guard let p = try store.proposal(id: id), p.state == "pending" else { return }
+        try store.setProposalState(id, "approved")
+        let reviewer = Reviewer(store: store, mirrorRoot: settings.mirrorRoot)
+        switch p.kind {
+        case "remove":
+            let remaining = try await reviewer.applyRemove(p, shareIO: shareIO)
+            if remaining.isEmpty { try store.setProposalState(id, "done") }
+            else {
+                let json = String(decoding: try JSONEncoder().encode(remaining), as: UTF8.self)
+                try store.db.run("UPDATE proposals SET items_json=? WHERE id=?", [.text(json), .integer(id)])
+                importIntoMusic()   // Music-side removals when the library is open
+            }
+        default:
+            break   // supersede is applied by its own path
+        }
+    }
+
+    private func dailyMaintenance() async {
+        let reviewer = Reviewer(store: store, mirrorRoot: settings.mirrorRoot)
+        _ = await reviewer.purgeQuarantine(retentionDays: settings.quarantineRetentionDays, shareIO: shareIO)
     }
 
     // MARK: Music import
@@ -117,6 +144,11 @@ public actor AppController {
                     await self.setReconciled()
                 }
                 outcome = importer.drain()
+                let mirror = await self.settings.mirrorRoot
+                let p = importer.processPending(mirrorRoot: mirror, reviewer: Reviewer(store: self.store, mirrorRoot: mirror))
+                if p.refreshed + p.relocated + p.removed > 0 {
+                    try? self.store.log("info", "music", "refreshed \(p.refreshed), relocated \(p.relocated), removed \(p.removed)")
+                }
             }
             await self.musicDrainFinished(outcome, ready: ready)
         }
@@ -159,6 +191,8 @@ public actor AppController {
         case let .pin(dir, pinned): try store.pin(dir, pinned: pinned)
         case .importNow: importIntoMusic()
         case .enableMusicImport: importIntoMusic(force: true)
+        case let .approve(id): try await approve(id)
+        case let .dismiss(id): try store.setProposalState(id, "dismissed")
         }
         await publishStatus()
     }
@@ -198,6 +232,14 @@ public actor AppController {
 
     private func scanFinished() async {
         scanTask = nil; scanProgressText = nil
+        // Review pass after every scan: withdraw proposals whose sources came back, propose new orphans.
+        let reviewer = Reviewer(store: store, mirrorRoot: settings.mirrorRoot)
+        _ = try? reviewer.withdrawStaleProposals()
+        if let n = try? reviewer.detectOrphans(), n > 0 {
+            try? store.log("info", "review", "\(n) new removal proposal(s) awaiting your approval")
+            await bus.publish(.activity(ActivityRow(id: 0, at: Date().timeIntervalSince1970, level: "warn", category: "review", message: "\(n) new removal proposal(s) await approval", relPath: nil)))
+        }
+        importIntoMusic()
         if batch == nil { state = lastBatchEndedBy == "budget" ? .batchComplete : .idle }
         await publishStatus()
     }
@@ -302,7 +344,7 @@ public actor AppController {
                               lastFullScan: (try? store.lastFinishedScan(.full))?.finishedAt,
                               lastIncrementalScan: (try? store.lastFinishedScan(.incremental))?.finishedAt,
                               nextScan: nextScanAt?.timeIntervalSince1970, scanInProgress: scanProgressText,
-                              pendingApprovals: 0, musicPending: musicPendingCache, musicImportDisabled: musicImportDisabled,
+                              pendingApprovals: (try? store.proposals(states: ["pending"]).count) ?? 0, musicPending: musicPendingCache, musicImportDisabled: musicImportDisabled,
                               alerts: alerts, shareLimit: 0, shareInFlight: 0,
                               uptimeSeconds: Date().timeIntervalSince(startedAt))
     }

@@ -74,6 +74,19 @@ public struct WebServer: Sendable {
             return try self.json(await self.controller.status())
         }
         api.post("stop") { _, _ in try await self.controller.perform(.stop); return try self.json(await self.controller.status()) }
+        api.get("proposals") { _, _ in try self.json(await self.controller.proposals()) }
+        api.post("proposals/approve") { req, ctx in
+            struct Body: Decodable { var id: Int64 }
+            let b = try await req.decode(as: Body.self, context: ctx)
+            try await self.controller.perform(.approve(id: b.id))
+            return try self.json(await self.controller.proposals())
+        }
+        api.post("proposals/dismiss") { req, ctx in
+            struct Body: Decodable { var id: Int64 }
+            let b = try await req.decode(as: Body.self, context: ctx)
+            try await self.controller.perform(.dismiss(id: b.id))
+            return try self.json(await self.controller.proposals())
+        }
         api.post("music/import") { _, _ in try await self.controller.perform(.importNow); return try self.json(await self.controller.status()) }
         api.post("music/enable") { _, _ in try await self.controller.perform(.enableMusicImport); return try self.json(await self.controller.status()) }
         api.post("scan") { req, ctx in

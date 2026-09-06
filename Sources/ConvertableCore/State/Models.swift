@@ -51,6 +51,8 @@ public struct OutputFile: Equatable, Sendable {
     public var tagHash: String?
     public var verifyOK: Bool
     public var musicPersistentID: String?
+    public var encodedAt: Double? = nil
+    public var tagsWrittenAt: Double? = nil
 }
 
 public enum ScanKind: String, Codable, Sendable { case full, incremental }

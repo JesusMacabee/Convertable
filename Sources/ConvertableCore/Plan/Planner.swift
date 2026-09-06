@@ -35,7 +35,7 @@ public struct Planner {
         var ineligible: [(AlbumKey, Plan.Ineligibility)] = []
 
         for s in summaries {
-            guard s.mirrored < s.tracks else { ineligible.append((s.key, .nothingToDo)); continue }
+            guard s.mirrored < s.tracks || s.stale > 0 else { ineligible.append((s.key, .nothingToDo)); continue }
             if !selection.ignoreSettle {
                 let fileWait = Double(fileSettleSeconds) - (now - s.lastChange)
                 let albumWait = Double(albumSettleSeconds) - (now - s.lastChange)
@@ -46,17 +46,22 @@ public struct Planner {
                 }
             }
             let files = try store.sourceFiles(in: s.key)
-            var work: [(SourceFile, Action)] = []
+            var work: [(SourceFile, Action, OutputFile?)] = []
             for f in files {
-                if let o = try store.output(forSource: f.id), o.verifyOK { continue }   // already mirrored
                 let a = profile.action(for: f)
-                if a.isWork { work.append((f, a)) }
+                guard a.isWork else { continue }
+                if let o = try store.output(forSource: f.id), o.verifyOK {
+                    // Already mirrored; only re-visit if the source changed after the output was written.
+                    if let written = o.tagsWrittenAt ?? o.encodedAt, f.stableSince > written { work.append((f, a, o)) }
+                    continue
+                }
+                work.append((f, a, nil))
             }
             guard !work.isEmpty else { ineligible.append((s.key, .allSkipped)); continue }
             let mapping = PathMapping.outputRelPaths(for: work.map { ($0.0.relPath, $0.1) })
-            let tracks = work.map { f, a in
-                PlannedTrack(source: f, action: a, outputRelPath: mapping[f.relPath] ?? f.relPath,
-                             estimatedOutBytes: Planner.estimate(f, a))
+            let tracks = work.map { f, a, o in
+                PlannedTrack(source: f, action: a, outputRelPath: o?.relPath ?? mapping[f.relPath] ?? f.relPath,
+                             estimatedOutBytes: o == nil ? Planner.estimate(f, a) : 0, existingOutput: o)
             }
             candidates.append(PlannedAlbum(key: s.key, displayArtist: s.displayArtist ?? s.key.artistDir,
                                            displayAlbum: s.displayAlbum ?? (s.key.albumDir.isEmpty ? "(loose files)" : s.key.albumDir),

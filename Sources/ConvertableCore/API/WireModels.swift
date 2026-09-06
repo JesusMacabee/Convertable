@@ -96,6 +96,8 @@ public enum Command: Codable, Sendable {
     case pin(artistDir: String, pinned: Bool)
     case importNow
     case enableMusicImport
+    case approve(id: Int64)
+    case dismiss(id: Int64)
 }
 
 /// Pushed over SSE. Kept small; clients refetch details.

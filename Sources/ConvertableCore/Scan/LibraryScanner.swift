@@ -83,6 +83,7 @@ public final class LibraryScanner {
         try gate()
         try store.db.transaction {
             progress.missing = try store.markFilesMissing(notSeenIn: scan.id, now: clock())
+            try store.bumpMissingScans(notSeenIn: scan.id)
             _ = try store.markDirectoriesMissing(notSeenIn: scan.id)
             try store.finishScan(scan.id, now: clock())
         }

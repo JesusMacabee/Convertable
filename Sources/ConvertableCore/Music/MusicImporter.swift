@@ -108,6 +108,62 @@ public struct MusicImporter {
         return out
     }
 
+    /// Retag → `refresh`; move → `set location` (falling back to remove + re-add with stats carried over);
+    /// approved removals → `delete`. Only when the library gate passes.
+    public func processPending(mirrorRoot: String? = nil, reviewer: Reviewer?) -> (refreshed: Int, relocated: Int, removed: Int, failed: Int) {
+        var out = (refreshed: 0, relocated: 0, removed: 0, failed: 0)
+        guard case .success = libraryReady() else { return out }
+        let root = mirrorRoot ?? settings.mirrorRoot
+        if let rows = try? store.db.query("SELECT id, music_persistent_id, rel_path FROM outputs WHERE music_refresh_pending=1 AND music_persistent_id IS NOT NULL LIMIT 200", [], { ($0.int(0)!, $0.text(1)!, $0.text(2)!) }) {
+            for (id, pid, rel) in rows {
+                do { try bridge.refresh(persistentID: pid); try store.db.run("UPDATE outputs SET music_refresh_pending=0 WHERE id=?", [.integer(id)]); out.refreshed += 1 }
+                catch { out.failed += 1; try? store.log("warn", "music", "refresh failed: \(error)", relPath: rel) }
+            }
+        }
+        if let rows = try? store.db.query("SELECT id, music_persistent_id, rel_path FROM outputs WHERE music_relocate_pending=1 AND music_persistent_id IS NOT NULL LIMIT 200", [], { ($0.int(0)!, $0.text(1)!, $0.text(2)!) }) {
+            for (id, pid, rel) in rows {
+                let path = root + "/" + rel
+                do {
+                    try bridge.setLocation(persistentID: pid, path: path)
+                    try store.db.run("UPDATE outputs SET music_relocate_pending=0 WHERE id=?", [.integer(id)]); out.relocated += 1
+                } catch {
+                    // Music refused to re-point the track: re-add at the new path, carry the listening history over, drop the old entry.
+                    do {
+                        let (newPID, _) = try bridge.add(path: path)
+                        try? bridge.copyStats(from: pid, to: newPID)
+                        try? bridge.remove(persistentID: pid)
+                        try store.db.run("UPDATE outputs SET music_persistent_id=?, music_relocate_pending=0 WHERE id=?", [.text(newPID), .integer(id)])
+                        out.relocated += 1
+                        try? store.log("info", "music", "re-added at new location (\(newPID))", relPath: rel)
+                    } catch {
+                        out.failed += 1; try? store.log("warn", "music", "relocate failed: \(error)", relPath: rel)
+                    }
+                }
+            }
+        }
+        if let reviewer, let approved = try? store.proposals(states: ["approved"]) {
+            for p in approved {
+                var remaining: [Store.ProposalItem] = []
+                for item in p.items {
+                    guard let pid = item.musicPersistentID else { continue }
+                    do { try bridge.remove(persistentID: pid); out.removed += 1 }
+                    catch {
+                        // Already gone from Music is fine; anything else is retried next time.
+                        if !"\(error)".contains("Can’t get") && !"\(error)".contains("Can't get") { remaining.append(item); out.failed += 1 }
+                    }
+                }
+                if remaining.isEmpty {
+                    try? store.setProposalState(p.id, "done")
+                } else if remaining.count != p.items.filter({ $0.musicPersistentID != nil }).count {
+                    let json = String(decoding: (try? JSONEncoder().encode(remaining)) ?? Data("[]".utf8), as: UTF8.self)
+                    try? store.db.run("UPDATE proposals SET items_json=? WHERE id=?", [.text(json), .integer(p.id)])
+                }
+            }
+            _ = reviewer
+        }
+        return out
+    }
+
     /// Maps Music's file tracks back onto our outputs (after a reinstall, a manual import, or a lost ID).
     public func reconcile(mirrorRoot: String? = nil) throws -> (matched: Int, unknownInMirror: Int) {
         let root = (mirrorRoot ?? settings.mirrorRoot) + "/"

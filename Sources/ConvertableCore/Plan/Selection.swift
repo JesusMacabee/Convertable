@@ -34,6 +34,8 @@ public struct PlannedTrack: Equatable, Sendable {
     public var action: Action
     public var outputRelPath: String
     public var estimatedOutBytes: Int64
+    /// Set when a verified output already exists but the source changed since — retag or re-encode, decided by hashing.
+    public var existingOutput: OutputFile? = nil
 }
 
 public struct PlannedAlbum: Equatable, Sendable {

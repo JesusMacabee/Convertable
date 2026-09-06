@@ -144,9 +144,69 @@ public final class Pipeline: @unchecked Sendable {
         let tagHash = TagHash.compute(info)
         let srcDuration = (try? Verifier.durationMs(localIn).ms) ?? info.lengthMs
 
-        // 3. Produce the output locally.
         let outName = (track.outputRelPath as NSString).lastPathComponent
         let localOut = work + "/" + outName
+        let stamp: String? = { if case let .transcode(spec) = track.action { return Encoders.stamp(spec) }; return nil }()
+        let carried = info.properties.filter { TagPolicy.isCarried($0.key) }
+        var picture: Data? = nil
+        if let pic = info.pictures.first, let small = Artwork.downscale(pic.data, maxPixels: config.artMaxPixels, jpegQuality: config.artJPEGQuality) {
+            picture = small.data
+        }
+
+        // 2b. A source that changed after it was mirrored: decide between touch, retag and re-encode by hashing.
+        if let existing = track.existingOutput {
+            let sameAudio = audioMD5 != nil && audioMD5 == existing.audioMD5
+            let now = Date().timeIntervalSince1970
+            if sameAudio && tagHash == existing.tagHash {
+                try store(sync: { try $0.db.run("UPDATE outputs SET tags_written_at=? WHERE id=?", [.real(now), .integer(existing.id)]) })
+                try? store(sync: { try $0.log("info", "pipeline", "source touched, nothing changed", relPath: src.relPath) })
+                return (existing.size ?? 0, Verifier.Report(ok: true, problems: [], durationMs: srcDuration, sampleRate: 0, channels: 0))
+            }
+            if sameAudio, await shareIO.exists(config.mirrorRoot + "/" + existing.relPath) {
+                // Retag in place: no re-encode, same path, Music keeps its reference.
+                try await shareIO.copy(from: config.mirrorRoot + "/" + existing.relPath, to: localOut)
+                try TagWriter.write(path: localOut, properties: carried, picture: picture, encoderStamp: stamp)
+                let report = Verifier.verify(output: localOut, sourceDurationMs: srcDuration, expectedSampleRate: nil, expectedTags: carried)
+                guard report.ok else { throw PipelineError.verifyFailed(report.problems) }
+                let outSize = (try? FileManager.default.attributesOfItem(atPath: localOut)[.size] as? NSNumber)?.int64Value ?? 0
+                try await shareIO.publish(localFile: localOut, to: config.mirrorRoot + "/" + existing.relPath)
+                try store(sync: { s in
+                    try s.setTags(id: src.id, artist: info.artist, albumArtist: info.albumArtist, album: info.album, audioMD5: audioMD5, tagHash: tagHash)
+                    try s.db.run("UPDATE outputs SET size=?, tag_hash=?, tags_written_at=?, music_refresh_pending=CASE WHEN music_persistent_id IS NULL THEN 0 ELSE 1 END WHERE id=?",
+                                 [.integer(outSize), .text(tagHash), .real(now), .integer(existing.id)])
+                    try s.log("info", "pipeline", "retagged in place → \(existing.relPath)", relPath: src.relPath)
+                })
+                return (outSize, report)
+            }
+            // Audio changed (or the mirror file vanished): fall through to a full re-encode onto the same path.
+        } else if let md5 = audioMD5, let (orphan, oldSource) = try store(sync: { try $0.orphanedOutput(audioMD5: md5) }) {
+            // 2c. Same audio at a new path while the old source is missing: a rename or move. Move the output, never re-encode.
+            let oldPath = config.mirrorRoot + "/" + orphan.relPath
+            let newPath = config.mirrorRoot + "/" + track.outputRelPath
+            if await shareIO.exists(oldPath) {
+                if oldPath != newPath { try await shareIO.move(from: oldPath, to: newPath) }
+                try store(sync: { s in
+                    try s.db.run("UPDATE outputs SET source_id=?, rel_path=?, music_relocate_pending=CASE WHEN music_persistent_id IS NULL THEN 0 ELSE 1 END WHERE id=?",
+                                 [.integer(src.id), .text(track.outputRelPath), .integer(orphan.id)])
+                    try s.setTags(id: src.id, artist: info.artist, albumArtist: info.albumArtist, album: info.album, audioMD5: audioMD5, tagHash: tagHash)
+                    try s.db.run("DELETE FROM source_files WHERE id=?", [.integer(oldSource.id)])
+                    try s.log("info", "pipeline", "moved: \(oldSource.relPath) → \(src.relPath)", relPath: src.relPath)
+                })
+                if tagHash != orphan.tagHash {
+                    try await shareIO.copy(from: newPath, to: localOut)
+                    try TagWriter.write(path: localOut, properties: carried, picture: picture, encoderStamp: stamp)
+                    let report = Verifier.verify(output: localOut, sourceDurationMs: srcDuration, expectedSampleRate: nil, expectedTags: carried)
+                    guard report.ok else { throw PipelineError.verifyFailed(report.problems) }
+                    try await shareIO.publish(localFile: localOut, to: newPath)
+                    try store(sync: { try $0.db.run("UPDATE outputs SET tag_hash=?, tags_written_at=?, music_refresh_pending=CASE WHEN music_persistent_id IS NULL THEN 0 ELSE 1 END WHERE id=?",
+                                                    [.text(tagHash), .real(Date().timeIntervalSince1970), .integer(orphan.id)]) })
+                }
+                let size = (try? await shareIO.size(of: newPath)) ?? 0
+                return (size, Verifier.Report(ok: true, problems: [], durationMs: srcDuration, sampleRate: 0, channels: 0))
+            }
+        }
+
+        // 3. Produce the output locally.
         var expectedRate: Int? = nil
         switch track.action {
         case let .transcode(spec):
@@ -159,12 +219,6 @@ public final class Pipeline: @unchecked Sendable {
         }
 
         // 4. Tags + art onto the output.
-        let carried = info.properties.filter { TagPolicy.isCarried($0.key) }
-        var picture: Data? = nil
-        if let pic = info.pictures.first, let small = Artwork.downscale(pic.data, maxPixels: config.artMaxPixels, jpegQuality: config.artJPEGQuality) {
-            picture = small.data
-        }
-        let stamp: String? = { if case let .transcode(spec) = track.action { return Encoders.stamp(spec) }; return nil }()
         try TagWriter.write(path: localOut, properties: carried, picture: picture, encoderStamp: stamp)
 
         // 5. Verify.
@@ -187,7 +241,10 @@ public final class Pipeline: @unchecked Sendable {
                     audio_md5=excluded.audio_md5, tag_hash=excluded.tag_hash, encoded_at=excluded.encoded_at, tags_written_at=excluded.tags_written_at, verify_ok=1
                 """, [.integer(src.id), .text(track.outputRelPath), .integer(outSize), .text(self.config.profileID),
                       Database.Value(audioMD5), .text(tagHash), .real(now), .real(now)])
-            try s.log("info", "pipeline", "\(track.action.label) → \(track.outputRelPath) (\(ByteCount.string(outSize)))", relPath: src.relPath)
+            if let existing = track.existingOutput {
+                try s.db.run("UPDATE outputs SET music_refresh_pending=CASE WHEN music_persistent_id IS NULL THEN 0 ELSE 1 END WHERE id=?", [.integer(existing.id)])
+            }
+            try s.log("info", "pipeline", "\(track.existingOutput == nil ? "" : "re-encoded: ")\(track.action.label) → \(track.outputRelPath) (\(ByteCount.string(outSize)))", relPath: src.relPath)
         })
         return (outSize, report)
     }

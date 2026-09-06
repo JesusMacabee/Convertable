@@ -169,11 +169,86 @@ public final class Store: @unchecked Sendable {
     // MARK: Outputs
 
     public func output(forSource id: Int64) throws -> OutputFile? {
-        try db.query("SELECT * FROM outputs WHERE source_id=?", [.integer(id)]) { r in
-            OutputFile(id: r.int("id")!, sourceID: r.int("source_id")!, relPath: r.text("rel_path")!, size: r.int("size"),
-                       encoderProfile: r.text("encoder_profile")!, audioMD5: r.text("audio_md5"), tagHash: r.text("tag_hash"),
-                       verifyOK: (r.int("verify_ok") ?? 0) != 0, musicPersistentID: r.text("music_persistent_id"))
-        }.first
+        try db.query("SELECT * FROM outputs WHERE source_id=?", [.integer(id)], Store.output).first
+    }
+
+    static func output(_ r: Database.Row) -> OutputFile {
+        OutputFile(id: r.int("id")!, sourceID: r.int("source_id")!, relPath: r.text("rel_path")!, size: r.int("size"),
+                   encoderProfile: r.text("encoder_profile")!, audioMD5: r.text("audio_md5"), tagHash: r.text("tag_hash"),
+                   verifyOK: (r.int("verify_ok") ?? 0) != 0, musicPersistentID: r.text("music_persistent_id"),
+                   encodedAt: r.double("encoded_at"), tagsWrittenAt: r.double("tags_written_at"))
+    }
+
+    /// An output whose source has gone missing but whose audio matches — the signature of a rename/move.
+    public func orphanedOutput(audioMD5: String) throws -> (OutputFile, SourceFile)? {
+        try db.query("""
+            SELECT o.*, s.rel_path s_rel FROM outputs o JOIN source_files s ON s.id = o.source_id
+            WHERE s.status='missing' AND o.audio_md5=? LIMIT 1
+            """, [.text(audioMD5)]) { r -> (OutputFile, SourceFile)? in
+            guard let src = try? self.sourceFile(relPath: r.text("s_rel")!) else { return nil }
+            return (Store.output(r), src)
+        }.compactMap { $0 }.first
+    }
+
+    /// Counts one more full scan of confirmed absence for everything still missing after `scanID`.
+    public func bumpMissingScans(notSeenIn scanID: Int64) throws {
+        try db.run("UPDATE source_files SET missing_full_scans = missing_full_scans + 1 WHERE status='missing' AND last_seen_scan < ?", [.integer(scanID)])
+    }
+
+    // MARK: Proposals
+
+    public struct ProposalItem: Codable, Equatable, Sendable {
+        public var outputID: Int64?
+        public var legacyID: Int64?
+        public var relPath: String          // relative to the mirror root (remove) or the legacy media root (supersede)
+        public var musicPersistentID: String?
+        public var bytes: Int64
+        public var counterpartPersistentID: String?   // supersede: the mirror track that inherits play counts
+    }
+
+    public struct Proposal: Codable, Equatable, Sendable, Identifiable {
+        public var id: Int64
+        public var kind: String
+        public var artistDir: String, albumDir: String
+        public var title: String, reason: String
+        public var items: [ProposalItem]
+        public var bytes: Int64
+        public var createdAt: Double
+        public var state: String
+        public var decidedAt: Double?, doneAt: Double?, error: String?
+    }
+
+    public func insertProposal(kind: String, album: AlbumKey, title: String, reason: String, items: [ProposalItem], now: Double) throws -> Int64 {
+        let json = String(decoding: try JSONEncoder().encode(items), as: UTF8.self)
+        return try db.insert("INSERT INTO proposals (kind, artist_dir, album_dir, title, reason, items_json, bytes, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                             [.text(kind), .text(album.artistDir), .text(album.albumDir), .text(title), .text(reason), .text(json),
+                              .integer(items.reduce(0) { $0 + $1.bytes }), .real(now)])
+    }
+
+    public func proposals(states: [String] = ["pending", "approved"]) throws -> [Proposal] {
+        let marks = states.map { _ in "?" }.joined(separator: ",")
+        return try db.query("SELECT * FROM proposals WHERE state IN (\(marks)) ORDER BY created_at DESC", states.map { .text($0) }, Store.proposal)
+    }
+
+    public func proposal(id: Int64) throws -> Proposal? { try db.query("SELECT * FROM proposals WHERE id=?", [.integer(id)], Store.proposal).first }
+
+    public func setProposalState(_ id: Int64, _ state: String, error: String? = nil, now: Double = Date().timeIntervalSince1970) throws {
+        let col = state == "done" || state == "failed" ? "done_at" : "decided_at"
+        try db.run("UPDATE proposals SET state=?, \(col)=?, error=? WHERE id=?", [.text(state), .real(now), Database.Value(error), .integer(id)])
+    }
+
+    /// Output ids already covered by a live proposal (pending/approved) or an explicit dismissal.
+    public func outputIDsCoveredByProposals() throws -> Set<Int64> {
+        var ids: Set<Int64> = []
+        for p in try proposals(states: ["pending", "approved", "dismissed"]) { for i in p.items { if let o = i.outputID { ids.insert(o) } } }
+        return ids
+    }
+
+    static func proposal(_ r: Database.Row) -> Proposal {
+        let items = (try? JSONDecoder().decode([ProposalItem].self, from: Data((r.text("items_json") ?? "[]").utf8))) ?? []
+        return Proposal(id: r.int("id")!, kind: r.text("kind")!, artistDir: r.text("artist_dir")!, albumDir: r.text("album_dir")!,
+                        title: r.text("title")!, reason: r.text("reason")!, items: items, bytes: r.int("bytes") ?? 0,
+                        createdAt: r.double("created_at")!, state: r.text("state")!, decidedAt: r.double("decided_at"), doneAt: r.double("done_at"), error: r.text("error"))
     }
 
     // MARK: Pins
@@ -195,6 +270,7 @@ public final class Store: @unchecked Sendable {
         public var losslessTracks: Int
         public var lossyTracks: Int
         public var mirrored: Int          // tracks with a verified output
+        public var stale: Int             // mirrored tracks whose source changed after the output was written
         public var firstSeen: Double      // earliest first_seen in the album
         public var lastChange: Double     // latest stable_since in the album
         public var minObservations: Int
@@ -209,7 +285,8 @@ public final class Store: @unchecked Sendable {
                    SUM(CASE WHEN s.kind='lossy' THEN 1 ELSE 0 END) lossy,
                    SUM(CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END) mirrored,
                    MIN(s.first_seen) first_seen, MAX(s.stable_since) last_change, MIN(s.observations) min_obs,
-                   MAX(s.tag_albumartist) tag_aa, MAX(s.tag_album) tag_album
+                   MAX(s.tag_albumartist) tag_aa, MAX(s.tag_album) tag_album,
+                   SUM(CASE WHEN o.id IS NOT NULL AND COALESCE(o.tags_written_at, o.encoded_at) IS NOT NULL AND s.stable_since > COALESCE(o.tags_written_at, o.encoded_at) THEN 1 ELSE 0 END) stale
             FROM source_files s
             LEFT JOIN outputs o ON o.source_id = s.id AND o.verify_ok = 1
             WHERE s.status='active' AND s.kind != 'other'
@@ -219,7 +296,7 @@ public final class Store: @unchecked Sendable {
         sql += " GROUP BY s.artist_dir, s.album_dir ORDER BY s.artist_dir, s.album_dir"
         return try db.query(sql, params) { r in
             AlbumSummary(key: AlbumKey(artistDir: r.text(0)!, albumDir: r.text(1)!), tracks: Int(r.int(2)!), bytes: r.int(3)!,
-                         losslessTracks: Int(r.int(4)!), lossyTracks: Int(r.int(5)!), mirrored: Int(r.int(6)!),
+                         losslessTracks: Int(r.int(4)!), lossyTracks: Int(r.int(5)!), mirrored: Int(r.int(6)!), stale: Int(r.int(12) ?? 0),
                          firstSeen: r.double(7)!, lastChange: r.double(8)!, minObservations: Int(r.int(9)!),
                          displayArtist: r.text(10), displayAlbum: r.text(11))
         }
