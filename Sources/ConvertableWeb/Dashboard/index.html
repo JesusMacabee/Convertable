@@ -66,10 +66,19 @@ tr.album td:first-child { padding-left: 42px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .seg button { border: none; border-radius: 0; padding: 6px 12px; }
 .seg button.active { background: var(--accent); color: var(--accent-ink); }
-.summary { position: sticky; bottom: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; margin-top: 14px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; box-shadow: 0 -6px 24px rgba(0,0,0,.06); }
-.summary .spacer { flex: 1; }
-.preview { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
-.preview ul { margin: 6px 0; padding-left: 18px; max-height: 260px; overflow: auto; }
+.cartBtn { position: relative; font-weight: 600; }
+.cartBtn .n { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 11px; text-align: center; }
+.cartBtn.empty .n { background: var(--line); color: var(--muted); }
+.drawer { position: fixed; top: 0; right: 0; height: 100vh; width: min(460px, 100vw); background: var(--panel); border-left: 1px solid var(--line); box-shadow: -12px 0 40px rgba(0,0,0,.18); z-index: 20; display: flex; flex-direction: column; transform: translateX(100%); transition: transform .22s ease; }
+.drawer.open { transform: none; }
+.drawer header { position: static; border-bottom: 1px solid var(--line); }
+.drawer .items { flex: 1; overflow: auto; padding: 8px 16px; }
+.drawer .item { display: flex; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.drawer .item .x { margin-left: auto; padding: 2px 8px; }
+.drawer .foot { border-top: 1px solid var(--line); padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+.drawer .preview ul { margin: 6px 0; padding-left: 18px; max-height: 30vh; overflow: auto; }
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.25); z-index: 19; }
+.scrim[hidden] { display: none; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); }
 .log { font-family: var(--mono); font-size: 12px; }
@@ -89,7 +98,21 @@ form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 
   <span class="spacer"></span>
   <span class="ind" id="volInd"></span>
   <span class="ind" id="libInd"></span>
+  <button class="cartBtn empty" id="cartBtn" title="Conversion queue">Queue<span class="n" id="cartCount">0</span></button>
 </header>
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" aria-label="Conversion queue">
+  <header><h1 style="font-size:15px">Conversion queue</h1><span class="spacer"></span><button id="drawerClose">Close</button></header>
+  <div class="items" id="cartItems"></div>
+  <div class="foot">
+    <div class="row"><span id="selSummary" class="sub">Nothing queued</span></div>
+    <div class="row"><label class="row">Cap
+      <select id="capPreset"><option value="">none</option><option value="25">25 GB</option><option value="50">50 GB</option><option value="100">100 GB</option><option value="250">250 GB</option><option value="custom">custom…</option></select>
+      <input id="capCustom" type="number" min="1" step="1" placeholder="GB" style="width:80px" hidden></label>
+      <span class="spacer" style="flex:1"></span><button id="btnClear">Clear</button><button id="btnPreview" class="primary">Preview batch</button></div>
+    <div class="preview" id="previewCard" hidden></div>
+  </div>
+</aside>
 <nav>
   <button data-page="overview" class="active">Overview</button>
   <button data-page="convert">Convert</button>
@@ -132,12 +155,7 @@ form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 
     </div>
     <input id="search" placeholder="Search artists…" style="min-width:220px">
     <span class="spacer" style="flex:1"></span>
-    <label class="row">Cap
-      <select id="capPreset">
-        <option value="">none</option><option value="25">25 GB</option><option value="50">50 GB</option><option value="100">100 GB</option><option value="250">250 GB</option><option value="custom">custom…</option>
-      </select>
-      <input id="capCustom" type="number" min="1" step="1" placeholder="GB" style="width:90px" hidden>
-    </label>
+    <span class="hint">Tick artists or albums; they collect in the <b>Queue</b> at the top right.</span>
   </div>
   <p class="hint" id="modeHint"></p>
   <div class="card" style="padding:0;overflow:auto">
@@ -149,13 +167,6 @@ form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 
       <tbody></tbody>
     </table>
   </div>
-  <div class="summary">
-    <div id="selSummary" class="sub">Nothing selected</div>
-    <span class="spacer"></span>
-    <button id="btnClear">Clear</button>
-    <button id="btnPreview" class="primary">Preview batch</button>
-  </div>
-  <div class="card preview" id="previewCard" hidden></div>
 </section>
 
 <section id="page-batches" hidden>
@@ -322,6 +333,7 @@ function capBytes() {
 $('#capPreset').onchange = () => { $('#capCustom').hidden = $('#capPreset').value !== 'custom'; updateSummary(); };
 $('#capCustom').oninput = updateSummary;
 $$('#modeSeg button').forEach(b => b.onclick = () => { mode = b.dataset.mode; $$('#modeSeg button').forEach(x => x.classList.toggle('active', x === b)); renderArtists(); updateSummary(); });
+updateSummary();
 $('#search').oninput = renderArtists;
 $$('#artistTable th[data-sort]').forEach(th => th.onclick = () => { if (sortKey === th.dataset.sort) sortDir = -sortDir; else { sortKey = th.dataset.sort; sortDir = th.dataset.sort === 'name' ? 1 : -1; } $$('#artistTable th').forEach(x => x.classList.toggle('active', x === th)); renderArtists(); });
 function renderArtists() {
@@ -362,7 +374,24 @@ function currentSelection() {
   for (const a of selArtists) for (const al of (albumsCache[a] || [])) keys.push({ artistDir: a, albumDir: al.albumDir });
   return { mode: { albums: { _0: keys } }, cap, ignoreSettle: false };
 }
+const drawer = { open() { $('#drawer').classList.add('open'); $('#scrim').hidden = false; }, close() { $('#drawer').classList.remove('open'); $('#scrim').hidden = true; } };
+$('#cartBtn').onclick = () => { if ($('#drawer').classList.contains('open')) drawer.close(); else { drawer.open(); } };
+$('#drawerClose').onclick = drawer.close; $('#scrim').onclick = drawer.close;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') drawer.close(); });
+function renderCart() {
+  const items = [];
+  for (const d of selArtists) { const a = artists.find(x => x.dir === d); items.push({ kind: 'artist', key: d, label: a ? a.name : d, sub: a ? `${a.albums} albums · ${a.tracks} tracks` : '', bytes: a ? a.bytes : 0 }); }
+  for (const k of selAlbums) { const [d, al] = k.split(' '); const a = (albumsCache[d] || []).find(x => x.albumDir === al); items.push({ kind: 'album', key: k, label: a ? a.name : al, sub: `${artists.find(x => x.dir === d)?.name || d}${a ? ` · ${a.tracks} tracks` : ''}`, bytes: a ? a.bytes : 0 }); }
+  const n = items.length;
+  $('#cartCount').textContent = mode === 'artists' ? n : '·';
+  $('#cartBtn').classList.toggle('empty', mode === 'artists' && n === 0);
+  $('#cartItems').innerHTML = mode !== 'artists'
+    ? `<div class="empty">${mode === 'size' ? 'Size mode: the oldest eligible albums up to the cap.' : 'Everything eligible, oldest first.'}</div>`
+    : (items.map(i => `<div class="item"><span class="chip">${i.kind}</span><span><b>${esc(i.label)}</b><div class="sub">${esc(i.sub)}</div></span><span class="sub" style="margin-left:auto">${fmtBytes(i.bytes)}</span><button class="x" data-rm="${esc(i.key)}" data-kind="${i.kind}" title="Remove">✕</button></div>`).join('') || '<div class="empty">Nothing queued yet. Tick artists or albums on the Convert tab.</div>');
+  $$('#cartItems [data-rm]').forEach(b => b.onclick = () => { if (b.dataset.kind === 'artist') selArtists.delete(b.dataset.rm); else selAlbums.delete(b.dataset.rm); renderArtists(); updateSummary(); });
+}
 function updateSummary() {
+  renderCart();
   const cap = capBytes();
   let text;
   if (mode === 'size') text = cap ? `Oldest eligible albums up to ${fmtBytes(cap)}` : 'Oldest eligible albums, no cap — set one or use Everything';
@@ -374,8 +403,9 @@ function updateSummary() {
   }
   $('#selSummary').textContent = text;
   $('#btnPreview').disabled = mode === 'artists' && !selArtists.size && !selAlbums.size;
+  $('#previewCard').hidden = true;
 }
-$('#btnClear').onclick = () => { selArtists.clear(); selAlbums.clear(); renderArtists(); updateSummary(); $('#previewCard').hidden = true; };
+$('#btnClear').onclick = () => { selArtists.clear(); selAlbums.clear(); renderArtists(); updateSummary(); };
 $('#btnPreview').onclick = async () => {
   const sel = currentSelection();
   if (mode === 'artists') for (const a of selArtists) if (!albumsCache[a]) albumsCache[a] = await api('/albums?artist=' + encodeURIComponent(a));
@@ -391,7 +421,7 @@ $('#btnPreview').onclick = async () => {
     <div class="row" style="margin-top:10px">
       ${p.overflow.length ? `<button class="primary" id="startAll">Convert all ${fmtBytes(p.bytesIn + p.overflowBytes)}</button><button id="startCap">Respect cap (${fmtBytes(p.bytesIn)})</button>` : `<button class="primary" id="startCap" ${p.albums.length ? '' : 'disabled'}>Start batch</button>`}
     </div>`;
-  const start = exceed => async () => { await api('/batch', { method: 'POST', body: { selection: p.selection, exceedCap: exceed } }); showPage('overview'); };
+  const start = exceed => async () => { await api('/batch', { method: 'POST', body: { selection: p.selection, exceedCap: exceed } }); selArtists.clear(); selAlbums.clear(); renderArtists(); updateSummary(); drawer.close(); showPage('overview'); };
   $('#startCap').onclick = start(false);
   if ($('#startAll')) $('#startAll').onclick = start(true);
 };
