@@ -1,6 +1,6 @@
 # Convertable — Design & Build Plan
 
-*Status: Phases 0–5 built (scaffold, scanner/planner, pipeline, web dashboard, Music bridge, menu bar app). Last updated 2026-09-05.*
+*Status: Phases 0–6 built; Phase 7 (first real batch) pending. Last updated 2026-09-05.*
 
 ## 1. Purpose
 
@@ -281,6 +281,7 @@ Both modes are gated identically; the manual library switching the user plans is
 - **Orphan**: a source missing across two consecutive *full* scans with the volume healthy → proposal *Remove mirror copy*. Approval → move output to `Lossless Mirror/.quarantine/<yyyy-mm-dd>/…` + Music remove. Quarantine purged after 30 days (configurable). Dismissing a proposal keeps the file and suppresses re-proposal until the source situation changes.
 - **Supersede**: legacy `AAC Music/Music/Music/**/*.m4a` is indexed once (tags, duration). When a mirror album finishes, match legacy albums by normalized (album artist, album) with track count and per-track duration within ±3 s; only confident matches are proposed, others listed as "possible" for manual confirmation. Approval → copy rating/play count/last played from legacy tracks to mirror tracks (optional, default on), quarantine legacy files, Music remove. Legacy artists absent from the lossless tree are never proposed.
 - The queue is grouped by album with select-all, Approve / Dismiss, and a "why" line per item. A badge on the menu bar icon shows pending count.
+- *Built in Phase 6.* Retag / re-encode / rename are decided by hashing on the local copy (touch → timestamp only; same audio → tags rewritten in place and Music `refresh`; same audio at a new path with the old source missing → output moved, Music `set location` with a re-add fallback that carries play counts; audio changed → re-encode onto the same path). Orphan proposals need two full scans of confirmed absence and withdraw themselves when the source returns. Legacy matching keys on normalised (album artist, album) with track-count and title agreement; "possible" matches are labelled as such. Supersede application (stats → remove → quarantine under `.quarantine/<date>/legacy/`) only runs with the library open.
 
 ## 13. User interface
 

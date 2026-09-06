@@ -156,6 +156,15 @@ public enum Schema {
         );
         CREATE INDEX proposals_state ON proposals(state);
         """,
+        // v4 — legacy library supersede (Phase 6b)
+        """
+        ALTER TABLE legacy_files ADD COLUMN root TEXT NOT NULL DEFAULT '';
+        ALTER TABLE legacy_files ADD COLUMN mtime REAL;
+        ALTER TABLE legacy_files ADD COLUMN superseded_at REAL;
+        ALTER TABLE legacy_files ADD COLUMN title TEXT;
+        ALTER TABLE legacy_files ADD COLUMN album_artist TEXT;
+        ALTER TABLE legacy_files ADD COLUMN album TEXT;
+        """,
     ]
 
     public static var currentVersion: Int { migrations.count }

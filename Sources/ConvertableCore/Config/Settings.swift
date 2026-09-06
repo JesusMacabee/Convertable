@@ -47,6 +47,10 @@ public struct Settings: Codable, Equatable, Sendable {
     // Music.app
     public var importMethod: ImportMethod = .appleScript
 
+    // Legacy library (pre-existing lossy files in the Music library, not derived from the source tree)
+    public var legacyMediaRoots: [String] = ["/Volumes/PLeX/Music/AAC Music/Music/Music", "/Volumes/PLeX/Music/AAC Music/Music/Media.localized/Music"]
+    public var supersedeEnabled: Bool = true
+
     // Scanning
     public var incrementalScanMinutes: Int = 10
     public var fullScanHour: Int = 4

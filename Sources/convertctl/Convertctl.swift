@@ -378,7 +378,7 @@ struct Music: ParsableCommand {
 // MARK: - Phase 6: review
 
 struct Review: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Removal / supersede proposals.", subcommands: [List.self, Detect.self, Approve.self, Dismiss.self])
+    static let configuration = CommandConfiguration(abstract: "Removal / supersede proposals.", subcommands: [List.self, Detect.self, Approve.self, Dismiss.self, LegacyIndex.self, LegacyMatch.self])
 
     struct List: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Pending and approved proposals.")
@@ -408,5 +408,23 @@ struct Review: AsyncParsableCommand {
     struct Dismiss: ParsableCommand {
         @Argument var id: Int64
         func run() throws { try openStore().setProposalState(id, "dismissed"); print("dismissed #\(id)") }
+    }
+    struct LegacyIndex: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(commandName: "legacy-index", abstract: "Index the legacy library's tags (incremental).")
+        @Option(name: .long, parsing: .upToNextOption) var roots: [String] = []
+        func run() async throws {
+            let s = try Settings.load()
+            var idx = LegacyIndexer(store: try openStore(), roots: roots.isEmpty ? s.legacyMediaRoots : roots)
+            idx.onProgress = { seen, indexed in print("  \(seen) seen, \(indexed) indexed") }
+            let r = try await idx.run(shareIO: ShareIO(limit: 4))
+            print("legacy: \(r.seen) seen, \(r.indexed) indexed, \(r.removed) removed")
+        }
+    }
+    struct LegacyMatch: ParsableCommand {
+        static let configuration = CommandConfiguration(commandName: "legacy-match", abstract: "Propose supersedes for completed mirror albums.")
+        func run() throws {
+            let s = try Settings.load(); let store = try openStore()
+            print("new supersede proposals: \(try SupersedeMatcher(store: store, profile: Profile.named(s.profileID)!).run())")
+        }
     }
 }

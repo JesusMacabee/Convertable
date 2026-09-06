@@ -109,14 +109,42 @@ public actor AppController {
                 importIntoMusic()   // Music-side removals when the library is open
             }
         default:
-            break   // supersede is applied by its own path
+            importIntoMusic()   // supersede is applied with the library open (MusicImporter.processPending)
         }
     }
 
     private func dailyMaintenance() async {
         let reviewer = Reviewer(store: store, mirrorRoot: settings.mirrorRoot)
         _ = await reviewer.purgeQuarantine(retentionDays: settings.quarantineRetentionDays, shareIO: shareIO)
+        indexLegacy()
     }
+
+    private var legacyTask: Task<Void, Never>?
+
+    /// Indexes the legacy library (incremental) and proposes supersedes. Runs in the background.
+    public func indexLegacy() {
+        guard settings.supersedeEnabled, legacyTask == nil, let profile = Profile.named(settings.profileID) else { return }
+        let indexer = LegacyIndexer(store: store, roots: settings.legacyMediaRoots)
+        let matcher = SupersedeMatcher(store: store, profile: profile)
+        let io = shareIO
+        let bridge = musicBridge
+        let roots = settings.legacyMediaRoots
+        let libraryOpen = MusicPrefs.isConfiguredLibraryOpen(settings) && MusicPrefs.isRunning
+        legacyTask = Task.detached(priority: .background) { [weak self] in
+            guard let self else { return }
+            if let r = try? await indexer.run(shareIO: io) {
+                try? self.store.log("info", "legacy", "legacy index: \(r.seen) files seen, \(r.indexed) (re)indexed, \(r.removed) gone")
+            }
+            if libraryOpen, let n = try? SupersedeMatcher.mapMusicIDs(store: self.store, roots: roots, bridge: bridge) {
+                try? self.store.log("info", "legacy", "mapped \(n) legacy tracks to Music")
+            }
+            if let n = try? matcher.run(), n > 0 {
+                try? self.store.log("info", "review", "\(n) legacy supersede proposal(s) await your approval")
+            }
+            await self.legacyFinished()
+        }
+    }
+    private func legacyFinished() async { legacyTask = nil; await publishStatus() }
 
     // MARK: Music import
 
@@ -193,6 +221,7 @@ public actor AppController {
         case .enableMusicImport: importIntoMusic(force: true)
         case let .approve(id): try await approve(id)
         case let .dismiss(id): try store.setProposalState(id, "dismissed")
+        case .indexLegacy: indexLegacy()
         }
         await publishStatus()
     }

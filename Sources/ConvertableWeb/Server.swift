@@ -87,6 +87,7 @@ public struct WebServer: Sendable {
             try await self.controller.perform(.dismiss(id: b.id))
             return try self.json(await self.controller.proposals())
         }
+        api.post("legacy/index") { _, _ in try await self.controller.perform(.indexLegacy); return try self.json(await self.controller.status()) }
         api.post("music/import") { _, _ in try await self.controller.perform(.importNow); return try self.json(await self.controller.status()) }
         api.post("music/enable") { _, _ in try await self.controller.perform(.enableMusicImport); return try self.json(await self.controller.status()) }
         api.post("scan") { req, ctx in

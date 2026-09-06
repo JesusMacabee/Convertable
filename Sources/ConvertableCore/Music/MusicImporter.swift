@@ -142,7 +142,16 @@ public struct MusicImporter {
             }
         }
         if let reviewer, let approved = try? store.proposals(states: ["approved"]) {
-            for p in approved {
+            for p in approved where p.kind == "supersede" {
+                let remaining = SupersedeMatcher.apply(p, store: store, bridge: bridge, quarantineDir: reviewer.quarantineDir())
+                if remaining.isEmpty { try? store.setProposalState(p.id, "done"); out.removed += p.items.count }
+                else {
+                    out.failed += remaining.count
+                    let json = String(decoding: (try? JSONEncoder().encode(remaining)) ?? Data("[]".utf8), as: UTF8.self)
+                    try? store.db.run("UPDATE proposals SET items_json=? WHERE id=?", [.text(json), .integer(p.id)])
+                }
+            }
+            for p in approved where p.kind == "remove" {
                 var remaining: [Store.ProposalItem] = []
                 for item in p.items {
                     guard let pid = item.musicPersistentID else { continue }

@@ -98,6 +98,7 @@ public enum Command: Codable, Sendable {
     case enableMusicImport
     case approve(id: Int64)
     case dismiss(id: Int64)
+    case indexLegacy
 }
 
 /// Pushed over SSE. Kept small; clients refetch details.
