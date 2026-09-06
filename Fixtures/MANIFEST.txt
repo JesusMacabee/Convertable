@@ -1,0 +1,30 @@
+hi-res 24-bit album	2 Chainz/2 Chainz-So Help Me God-24BIT-WEBFLAC-2020-MenInFlac/11-2_chainz-southside_hov.flac
+hi-res 24-bit album	2 Chainz/2 Chainz-So Help Me God-24BIT-WEBFLAC-2020-MenInFlac/01-2_chainz-lambo_wrist.flac
+hi-res 24-bit album	2 Chainz/2 Chainz-So Help Me God-24BIT-WEBFLAC-2020-MenInFlac/02-2_chainz-grey_area.flac
+complete CD-rate FLAC album	Larry June/Larry June-Out The Trunk-16BIT-WEB-FLAC-2019-VEXED/01-larry_june-from_uncle_herm.flac
+complete CD-rate FLAC album	Larry June/Larry June-Out The Trunk-16BIT-WEB-FLAC-2019-VEXED/08-larry_june-mason_cafe.flac
+complete CD-rate FLAC album	Larry June/Larry June-Out The Trunk-16BIT-WEB-FLAC-2019-VEXED/06-larry_june-mission_bay.flac
+complete CD-rate FLAC album	Larry June/Larry June-Out The Trunk-16BIT-WEB-FLAC-2019-VEXED/10-larry_june-i_told_you_in_07.flac
+complete CD-rate FLAC album	Larry June/Larry June-Out The Trunk-16BIT-WEB-FLAC-2019-VEXED/05-larry_june-sls_30_days.flac
+complete CD-rate FLAC album	Larry June/Larry June-Out The Trunk-16BIT-WEB-FLAC-2019-VEXED/02-larry_june-lets_drive_to_vegas.flac
+complete CD-rate FLAC album	Larry June/Larry June-Out The Trunk-16BIT-WEB-FLAC-2019-VEXED/04-larry_june-organic_fatherhood.flac
+complete CD-rate FLAC album	Larry June/Larry June-Out The Trunk-16BIT-WEB-FLAC-2019-VEXED/09-larry_june-organic_smiles.flac
+complete CD-rate FLAC album	Larry June/Larry June-Out The Trunk-16BIT-WEB-FLAC-2019-VEXED/03-larry_june-smoothies_in_1991.flac
+complete CD-rate FLAC album	Larry June/Larry June-Out The Trunk-16BIT-WEB-FLAC-2019-VEXED/07-larry_june-2002_s500_benz.flac
+multi-disc layout	2Pac/All Eyez on Me (1996)/Enhanced CD 01/2Pac - All Eyez on Me - 06 - 2 of Amerikaz Most Wanted.flac
+multi-disc layout	2Pac/All Eyez on Me (1996)/Enhanced CD 01/2Pac - All Eyez on Me - 03 - Skandalouz.flac
+compilation	Beck/Beck And Bogert and Appice-Beck Bogert Appice-REMASTERED-16BIT-WEB-FLAC-2005-OBZEN [a6925d537]-xpost/05-beck_bogert_and_appice-sweet_sweet_surrender_(album_version).flac
+compilation	Beck/Beck And Bogert and Appice-Beck Bogert Appice-REMASTERED-16BIT-WEB-FLAC-2005-OBZEN [a6925d537]-xpost/07-beck_bogert_and_appice-lose_myself_with_you_(album_version).flac
+lossy .mp3	Lupe Fiasco/The Cool/04 The Coolest.mp3
+lossy .mp3	E-40/The Block Brochure-Welcome To The Soil/05 Catch A Fade (Feat. Kendrick Lamar And Droop-E).mp3
+lossy .mp3	Lil Wayne/Dedication 6/12 Blackin Out ft Euro.mp3
+lossy .m4a	Boston/Corprate America/09 I Had A Good Time.m4a
+lossy .m4a	WZRD/WZRD/01 The Arrival.m4a
+lossy .m4a	Dillon Francis/Money Sucks, Friends Rule/12 Hurricane (feat. Lily Elise).m4a
+container .wav	King Gizzard & the Lizard Wizard/Live Albums/King Gizzard & The Lizard Wizard - Live in Austin '24/King Gizzard & The Lizard Wizard - Live in Austin '24/10 King Gizzard & the Lizard Wizard - Intrasport.wav
+container .wav	King Gizzard & the Lizard Wizard/Live Albums/Live at Red Rocks '22/Live at Red Rocks '22/08 Nuclear Fusion.wav
+non-ASCII path	Cam’ron/Purple Haze (2004)/Cam’ron - Purple Haze - 20 - Hey Lady.flac
+non-ASCII path	Cake/Fashion Nugget (1996)/CAKE - Fashion Nugget - 12 - She’ll Come Back to Me.flac
+non-ASCII path	Vince Staples/Summertime ’06 (2015)/CD 01/Vince Staples - Summertime ’06 - 03 - Norf Norf.flac
+shell-hostile chars	Beck/Everybody's Gotta Learn Sometime (2026)/Beck - Everybody's Gotta Learn Sometime - 04 - Ramona.flac
+shell-hostile chars	Jack Johnson/Brushfire Fairytales (2000)/Jack Johnson - Brushfire Fairytales - 13 - It's All Understood.flac

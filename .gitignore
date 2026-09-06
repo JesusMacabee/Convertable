@@ -1,0 +1,11 @@
+.build/
+.swiftpm/
+*.xcodeproj
+Fixtures/library/
+Fixtures/generated/
+Fixtures/scratch/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.DS_Store
+build/
