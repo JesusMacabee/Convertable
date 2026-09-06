@@ -120,6 +120,28 @@ public actor AppController {
     }
 
     private var legacyTask: Task<Void, Never>?
+    private var deadScanTask: Task<Void, Never>?
+    public private(set) var deadScanRunning = false
+
+    /// Walks Music for entries whose files are gone (minutes on a big library) and proposes their removal.
+    public func scanDeadEntries() {
+        guard deadScanTask == nil, MusicPrefs.isRunning, MusicPrefs.isConfiguredLibraryOpen(settings) else {
+            raise(Alert(id: "dead-scan", level: "info", message: "Dead-entry scan needs the configured Music library to be open.", action: nil)); return
+        }
+        deadScanRunning = true
+        let bridge = musicBridge
+        let reviewer = Reviewer(store: store, mirrorRoot: settings.mirrorRoot)
+        deadScanTask = Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+            do {
+                let dead = try bridge.deadTracks()
+                let n = try reviewer.proposeDeadEntries(dead)
+                try? self.store.log("info", "review", "dead-entry scan: \(dead.count) Music entries without files, \(n) new proposal(s)")
+            } catch { try? self.store.log("error", "review", "dead-entry scan failed: \(error)") }
+            await self.deadScanFinished()
+        }
+    }
+    private func deadScanFinished() async { deadScanTask = nil; deadScanRunning = false; alerts.removeAll { $0.id == "dead-scan" }; await publishStatus() }
 
     /// Indexes the legacy library (incremental) and proposes supersedes. Runs in the background.
     public func indexLegacy() {
@@ -224,6 +246,7 @@ public actor AppController {
         case let .approve(id): try await approve(id)
         case let .dismiss(id): try store.setProposalState(id, "dismissed")
         case .indexLegacy: indexLegacy()
+        case .scanDeadEntries: scanDeadEntries()
         }
         await publishStatus()
     }

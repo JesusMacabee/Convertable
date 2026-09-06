@@ -60,6 +60,31 @@ public struct Reviewer {
         return n
     }
 
+    /// Music entries whose files are gone → one "dead" proposal per album. Mirror tracks are never included:
+    /// a missing mirror file is a mirror problem (reconcile / orphan handling), not a dead entry.
+    @discardableResult
+    public func proposeDeadEntries(_ dead: [(persistentID: String, name: String, artist: String, album: String)]) throws -> Int {
+        let mirrorIDs = Set(try store.db.query("SELECT music_persistent_id FROM outputs WHERE music_persistent_id IS NOT NULL") { $0.text(0)! })
+        var covered: Set<String> = []
+        for p in try store.proposals(states: ["pending", "approved", "dismissed"]) where p.kind == "dead" { for i in p.items { if let m = i.musicPersistentID { covered.insert(m) } } }
+        var byAlbum: [String: [(String, String, String, String)]] = [:]
+        for d in dead where !mirrorIDs.contains(d.persistentID) && !covered.contains(d.persistentID) {
+            byAlbum[d.artist + "\u{1F}" + d.album, default: []].append(d)
+        }
+        var created = 0
+        for (key, items) in byAlbum.sorted(by: { $0.key < $1.key }) {
+            let parts = key.components(separatedBy: "\u{1F}")
+            let artist = parts[0].isEmpty ? "(no artist)" : parts[0], album = parts.count > 1 && !parts[1].isEmpty ? parts[1] : "(no album)"
+            _ = try store.insertProposal(kind: "dead", album: AlbumKey(artistDir: artist, albumDir: album),
+                                         title: "Remove \(items.count) dead \(items.count == 1 ? "entry" : "entries") from Music",
+                                         reason: "Music lists \(items.count == 1 ? "a track" : "these tracks") but the file\(items.count == 1 ? "" : "s") no longer exist\(items.count == 1 ? "s" : ""). Removing the entries only cleans the library; no files are involved.",
+                                         items: items.map { .init(outputID: nil, legacyID: nil, relPath: $0.1, musicPersistentID: $0.0, bytes: 0, counterpartPersistentID: nil) },
+                                         now: clock())
+            created += 1
+        }
+        return created
+    }
+
     public func quarantineDir(now: Double? = nil) -> String {
         let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
         return mirrorRoot + "/.quarantine/" + df.string(from: Date(timeIntervalSince1970: now ?? clock()))

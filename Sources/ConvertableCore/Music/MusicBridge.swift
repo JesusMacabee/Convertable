@@ -136,6 +136,32 @@ public struct MusicBridge: Sendable {
         }
     }
 
+    /// Every file track whose file no longer exists, with enough metadata to show a person. Walks the whole
+    /// library one track at a time (Music cannot filter on a missing location), so minutes for large libraries.
+    public func deadTracks() throws -> [(persistentID: String, name: String, artist: String, album: String)] {
+        let out = try runner.run("""
+        tell application "Music"
+            set ts to every file track of library playlist 1
+            set acc to {}
+            repeat with t in ts
+                set dead to false
+                try
+                    if location of t is missing value then set dead to true
+                on error
+                    set dead to true
+                end try
+                if dead then set end of acc to (persistent ID of t) & \(Self.quote(Self.sep)) & (name of t) & \(Self.quote(Self.sep)) & (artist of t) & \(Self.quote(Self.sep)) & (album of t)
+            end repeat
+            set AppleScript's text item delimiters to linefeed
+            return acc as text
+        end tell
+        """, timeout: 1800)
+        return out.split(separator: "\n").compactMap { line in
+            let p = line.components(separatedBy: Self.sep)
+            return p.count == 4 ? (p[0], p[1], p[2], p[3]) : nil
+        }
+    }
+
     public func setLocation(persistentID: String, path: String) throws {
         _ = try runner.run("""
         tell application "Music"

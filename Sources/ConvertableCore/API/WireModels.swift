@@ -99,6 +99,7 @@ public enum Command: Codable, Sendable {
     case approve(id: Int64)
     case dismiss(id: Int64)
     case indexLegacy
+    case scanDeadEntries
 }
 
 /// Pushed over SSE. Kept small; clients refetch details.

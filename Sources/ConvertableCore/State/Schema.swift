@@ -169,6 +169,28 @@ public enum Schema {
         """
         ALTER TABLE outputs ADD COLUMN tag_policy INTEGER NOT NULL DEFAULT 0;
         """,
+        // v6 — proposals may also be 'dead' (Music entries whose files no longer exist)
+        """
+        CREATE TABLE proposals_v6 (
+            id          INTEGER PRIMARY KEY,
+            kind        TEXT NOT NULL CHECK (kind IN ('remove','supersede','dead')),
+            artist_dir  TEXT NOT NULL,
+            album_dir   TEXT NOT NULL,
+            title       TEXT NOT NULL,
+            reason      TEXT NOT NULL,
+            items_json  TEXT NOT NULL,
+            bytes       INTEGER NOT NULL DEFAULT 0,
+            created_at  REAL NOT NULL,
+            state       TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','approved','dismissed','done','failed')),
+            decided_at  REAL,
+            done_at     REAL,
+            error       TEXT
+        );
+        INSERT INTO proposals_v6 SELECT * FROM proposals;
+        DROP TABLE proposals;
+        ALTER TABLE proposals_v6 RENAME TO proposals;
+        CREATE INDEX proposals_state ON proposals(state);
+        """,
     ]
 
     public static var currentVersion: Int { migrations.count }

@@ -188,3 +188,20 @@ final class TagPolicyTests: XCTestCase {
         XCTAssertTrue(Verifier.verify(output: out, sourceDurationMs: d, expectedSampleRate: 44100, expectedTags: ["TITLE": ["t"]], expectPicture: false).ok)
     }
 }
+
+final class DeadEntryTests: XCTestCase {
+    func testDeadEntriesGroupPerAlbumAndSkipMirrorTracks() throws {
+        let store = try Store.inMemory()
+        let sid = try store.db.insert("INSERT INTO source_files (rel_path, artist_dir, album_dir, ext, kind, size, mtime, stable_since, observations, first_seen, last_seen_scan) VALUES ('A/B/1.flac','A','B','.flac','lossless',1,1,1,3,1,1)")
+        try store.db.run("INSERT INTO outputs (source_id, rel_path, encoder_profile, verify_ok, music_persistent_id) VALUES (?,'A/B/1.m4a','x',1,'MIRROR1')", [.integer(sid)])
+        let r = Reviewer(store: store, mirrorRoot: "/M")
+        let dead = [("D1", "Song 1", "Old Artist", "Old Album"), ("D2", "Song 2", "Old Artist", "Old Album"), ("D3", "Loose", "", ""), ("MIRROR1", "Ours", "A", "B")]
+        XCTAssertEqual(try r.proposeDeadEntries(dead.map { ($0.0, $0.1, $0.2, $0.3) }), 2)
+        XCTAssertEqual(try r.proposeDeadEntries(dead.map { ($0.0, $0.1, $0.2, $0.3) }), 0, "not proposed twice")
+        let ps = try store.proposals()
+        XCTAssertTrue(ps.allSatisfy { $0.kind == "dead" })
+        XCTAssertTrue(ps.flatMap(\.items).map { $0.musicPersistentID! }.allSatisfy { $0 != "MIRROR1" }, "mirror tracks are never proposed as dead")
+        XCTAssertEqual(ps.first { $0.artistDir == "Old Artist" }?.items.count, 2)
+        XCTAssertEqual(ps.first { $0.artistDir == "(no artist)" }?.items.count, 1)
+    }
+}

@@ -179,6 +179,7 @@ form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 
 <section id="page-review" hidden>
   <p class="hint">Nothing here is ever deleted outright: approved removals move files to <code>.quarantine/&lt;date&gt;/</code> inside the mirror and are purged after the retention period. Dismissed proposals stay dismissed until the situation changes.</p>
   <div class="row" style="margin-bottom:12px"><button id="btnLegacy">Scan legacy library for duplicates now</button><span class="hint">Runs after each daily full scan too. Only albums that exist in both collections are ever proposed.</span></div>
+  <div class="row" style="margin-bottom:12px"><button id="btnDead">Scan Music for dead entries</button><span class="hint">Finds tracks Music lists whose files no longer exist (needs the iPod library open; takes a few minutes on a large library). Removal proposals appear below.</span></div>
   <div id="proposals"></div>
 </section>
 
@@ -434,14 +435,15 @@ async function loadBatches() {
 
 // ---- review
 $('#btnLegacy').onclick = () => api('/legacy/index', { method: 'POST' }).then(() => { $('#btnLegacy').textContent = 'Indexing in the background…'; });
+$('#btnDead').onclick = () => api('/music/scan-dead', { method: 'POST' }).then(() => { $('#btnDead').textContent = 'Scanning Music in the background…'; $('#btnDead').disabled = true; });
 async function loadProposals() {
   const rows = await api('/proposals');
   const el = $('#proposals');
   if (!rows.length) { el.innerHTML = '<div class="card empty">No proposals. The mirror matches the source library.</div>'; return; }
   el.innerHTML = rows.map(p => `<div class="card" style="margin-bottom:12px">
-    <div class="row"><b>${esc(p.kind === 'remove' ? 'Remove' : 'Supersede')}</b> · <span>${esc(p.artistDir)}${p.albumDir ? ' — ' + esc(p.albumDir) : ''}</span><span class="chip">${p.items.length} files · ${fmtBytes(p.bytes)}</span><span class="chip">${esc(p.state)}</span><span class="sub">${fmtTime(p.createdAt)}</span></div>
+    <div class="row"><b>${esc(p.kind === 'remove' ? 'Remove' : p.kind === 'dead' ? 'Dead entries' : 'Supersede')}</b> · <span>${esc(p.artistDir)}${p.albumDir ? ' — ' + esc(p.albumDir) : ''}</span><span class="chip">${p.items.length} files · ${fmtBytes(p.bytes)}</span><span class="chip">${esc(p.state)}</span><span class="sub">${fmtTime(p.createdAt)}</span></div>
     <div style="margin:6px 0"><b>${esc(p.title)}</b><div class="sub">${esc(p.reason)}</div></div>
-    <details><summary class="sub">Files</summary><ul class="sub">${p.items.map(i => `<li>${esc(i.relPath)}${i.musicPersistentID ? ' <span class="chip">in Music</span>' : ''}${i.counterpartPersistentID ? ' <span class="chip">play counts carry over</span>' : ''}</li>`).join('')}</ul></details>
+    <details><summary class="sub">${p.kind === 'dead' ? 'Tracks' : 'Files'}</summary><ul class="sub">${p.items.map(i => `<li>${esc(i.relPath)}${i.musicPersistentID ? ' <span class="chip">in Music</span>' : ''}${i.counterpartPersistentID ? ' <span class="chip">play counts carry over</span>' : ''}</li>`).join('')}</ul></details>
     ${p.state === 'pending' ? `<div class="row" style="margin-top:8px"><button class="primary" data-approve="${p.id}">Approve</button><button data-dismiss="${p.id}">Dismiss</button></div>` : `<div class="sub" style="margin-top:8px">Approved — waiting for the Music library to be open to finish.</div>`}
   </div>`).join('');
   $$('[data-approve]', el).forEach(b => b.onclick = async () => { b.disabled = true; await api('/proposals/approve', { method: 'POST', body: { id: +b.dataset.approve } }); loadProposals(); });

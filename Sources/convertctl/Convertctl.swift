@@ -305,7 +305,7 @@ struct WebURL: ParsableCommand {
 
 struct Music: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Music.app bridge: ping, pending, drain, reconcile, tracks, remove.",
-                                                    subcommands: [Ping.self, Pending.self, Drain.self, Reconcile.self, TracksCmd.self, Remove.self])
+                                                    subcommands: [Ping.self, Pending.self, Drain.self, Reconcile.self, TracksCmd.self, Remove.self, ScanDead.self])
 
     struct LibraryOptions: ParsableArguments {
         @Option(name: .long, help: "Override the configured .musiclibrary path (testing against a throwaway library).") var library: String?
@@ -366,6 +366,15 @@ struct Music: ParsableCommand {
     struct TracksCmd: ParsableCommand {
         static let configuration = CommandConfiguration(commandName: "tracks", abstract: "List file tracks (persistent ID and path) in the open library.")
         func run() throws { for t in try MusicBridge().fileTracks() { print("\(t.persistentID)\t\(t.path)") } }
+    }
+    struct ScanDead: ParsableCommand {
+        static let configuration = CommandConfiguration(commandName: "scan-dead", abstract: "Walk the open library for entries whose files are gone and propose their removal (minutes on a large library).")
+        func run() throws {
+            let s = try Settings.load(); let store = try openStore()
+            let dead = try MusicBridge().deadTracks()
+            let n = try Reviewer(store: store, mirrorRoot: s.mirrorRoot).proposeDeadEntries(dead)
+            print("\(dead.count) dead entries, \(n) new proposal(s) — review with `convertctl review list`")
+        }
     }
     struct Remove: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Remove one track entry from the open library by persistent ID (the file is untouched).")

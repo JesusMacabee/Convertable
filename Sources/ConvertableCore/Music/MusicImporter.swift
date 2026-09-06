@@ -151,6 +151,16 @@ public struct MusicImporter {
                     try? store.db.run("UPDATE proposals SET items_json=? WHERE id=?", [.text(json), .integer(p.id)])
                 }
             }
+            for p in approved where p.kind == "dead" {
+                var remaining: [Store.ProposalItem] = []
+                for item in p.items {
+                    guard let pid = item.musicPersistentID else { continue }
+                    do { try bridge.remove(persistentID: pid); out.removed += 1 }
+                    catch { if !"\(error)".contains("get") { remaining.append(item); out.failed += 1 } }
+                }
+                if remaining.isEmpty { try? store.setProposalState(p.id, "done") }
+                else { let json = String(decoding: (try? JSONEncoder().encode(remaining)) ?? Data("[]".utf8), as: UTF8.self); try? store.db.run("UPDATE proposals SET items_json=? WHERE id=?", [.text(json), .integer(p.id)]) }
+            }
             for p in approved where p.kind == "remove" {
                 var remaining: [Store.ProposalItem] = []
                 for item in p.items {
