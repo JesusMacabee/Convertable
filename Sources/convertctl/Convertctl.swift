@@ -3,10 +3,10 @@ import ArgumentParser
 import ConvertableCore
 
 @main
-struct Convertctl: ParsableCommand {
+struct Convertctl: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Convertable command line — diagnostics and scripting over the same core as the app.",
-        subcommands: [Doctor.self, Config.self, Tags.self, Scan.self, PlanCommand.self, Artists.self, Status.self, Pin.self],
+        subcommands: [Doctor.self, Config.self, Tags.self, Scan.self, PlanCommand.self, Artists.self, Status.self, Pin.self, Run.self],
         defaultSubcommand: Doctor.self)
 }
 
@@ -206,4 +206,68 @@ func pad(_ s: String, _ width: Int, left: Bool = false) -> String {
     guard n < width else { return s }
     let fill = String(repeating: " ", count: width - n)
     return left ? fill + s : s + fill
+}
+
+
+// MARK: - Phase 2: run
+
+struct Run: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Convert a batch. Same selection flags as `plan`. Writes to the mirror root (override with --mirror).")
+    @Option(name: .long, help: "Size mode budget, e.g. 2GB.") var budget: String?
+    @Option(name: .long, parsing: .upToNextOption) var artists: [String] = []
+    @Option(name: .long, parsing: .upToNextOption) var albums: [String] = []
+    @Flag(name: .long) var everything = false
+    @Option(name: .long) var cap: String?
+    @Flag(name: .long) var ignoreSettle = false
+    @Option(name: .long, help: "Write outputs here instead of the configured mirror root (scratch testing).") var mirror: String?
+    @Option(name: .long) var concurrency: Int?
+    @Option(name: .long) var profile: String?
+    @Flag(name: .long, help: "Plan and print, but convert nothing.") var dryRun = false
+
+    func run() async throws {
+        let settings = try Settings.load()
+        let store = try openStore()
+        guard let prof = Profile.named(profile ?? settings.profileID) else { throw ValidationError("unknown profile") }
+        let mode: Selection.Mode
+        var capBytes: Int64? = cap.flatMap(ByteParser.parse)
+        if !artists.isEmpty { mode = .artists(artists) }
+        else if !albums.isEmpty { mode = .albums(albums.map { a in let p = a.split(separator: "/", maxSplits: 1).map(String.init); return AlbumKey(artistDir: p[0], albumDir: p.count > 1 ? p[1] : "") }) }
+        else if everything { mode = .everything }
+        else { mode = .size; capBytes = budget.flatMap(ByteParser.parse) ?? settings.batchBudgetBytes }
+        let selection = Selection(mode: mode, cap: capBytes, ignoreSettle: ignoreSettle)
+        let planner = Planner(store: store, profile: prof, fileSettleSeconds: settings.fileSettleSeconds, albumSettleSeconds: settings.albumSettleSeconds)
+        let plan = try planner.plan(selection)
+        print("Selection: \(selection.description) → \(plan.albums.count) albums, \(plan.trackCount) tracks, \(ByteCount.string(plan.bytesIn)) in")
+        if dryRun || plan.albums.isEmpty { return }
+
+        guard case let .available(mount) = VolumeGate.check(root: settings.sourceRoot) else { throw ValidationError("source volume not available") }
+        let mirrorRoot = mirror ?? settings.mirrorRoot
+        try FileManager.default.createDirectory(atPath: mirrorRoot, withIntermediateDirectories: true)
+        let shareIO = ShareIO(limit: settings.shareConcurrencyOverride ?? mount.suggestedConcurrency, maxLimit: 8)
+        let work = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Convertable/work").path
+        let config = Pipeline.Config(sourceRoot: settings.sourceRoot, mirrorRoot: mirrorRoot, workDir: work,
+                                     encodeConcurrency: concurrency ?? settings.encodeConcurrency,
+                                     artMaxPixels: settings.artMaxPixels, artJPEGQuality: settings.artJPEGQuality, profileID: prof.id)
+        let sel = try JSONEncoder().encode(selection)
+        try store.db.run("INSERT INTO batches (selection_json, budget_bytes, started_at) VALUES (?,?,?)",
+                         [.text(String(decoding: sel, as: UTF8.self)), Database.Value(capBytes), .real(Date().timeIntervalSince1970)])
+        let batchID = store.db.lastInsertRowID
+
+        let pipeline = Pipeline(config: config, store: store, shareIO: shareIO)
+        pipeline.onEvent = { ev in
+            switch ev {
+            case let .albumStarted(a): print("▶ \(a.displayArtist) — \(a.displayAlbum) (\(a.tracks.count) tracks)")
+            case let .trackFinished(r):
+                let name = (r.track.outputRelPath as NSString).lastPathComponent
+                print(r.ok ? String(format: "   ✓ %@  %@  %.1fs", name, ByteCount.string(r.outputBytes), r.seconds) : "   ✗ \(name): \(r.error ?? "?")")
+            case let .albumFinished(a): print(a.complete ? "   album complete" : "   album INCOMPLETE — not eligible for Music import")
+            case let .message(m): print("   \(m)")
+            }
+        }
+        let summary = await pipeline.run(plan, batchID: batchID)
+        print(String(format: "\nBatch #%d %@: %d tracks ok, %d failed, %@ in → %@ out, %.0f s (share concurrency peak %d, limit now %d)",
+                     batchID, summary.endedBy, summary.tracksDone, summary.tracksFailed, ByteCount.string(summary.bytesIn), ByteCount.string(summary.bytesOut),
+                     summary.seconds, await shareIO.peakInFlight, await shareIO.limit))
+        if summary.tracksFailed > 0 { throw ExitCode(2) }
+    }
 }
