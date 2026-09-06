@@ -142,7 +142,7 @@ public final class Pipeline: @unchecked Sendable {
         let info = try TagReader.read(localIn)
         let audioMD5 = AudioHash.audioMD5(localIn, ext: src.ext)
         let tagHash = TagHash.compute(info)
-        let srcDuration = (try? Verifier.durationMs(localIn).ms) ?? info.lengthMs
+        let srcDuration = (try? Verifier.durationMs(localIn).ms) ?? info.lengthMs   // TagLib's whole-second length if CoreAudio can't open it
 
         let outName = (track.outputRelPath as NSString).lastPathComponent
         let localOut = work + "/" + outName

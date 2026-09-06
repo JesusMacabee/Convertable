@@ -100,3 +100,18 @@ final class ShareIOTests: XCTestCase {
         XCTAssertEqual(l, 2)
     }
 }
+
+final class FrameHashTests: XCTestCase {
+    func testFrameHashSurvivesRetagAndDiffersBetweenFiles() throws {
+        let files = Fixtures.all(withExtension: "flac")
+        guard files.count >= 2 else { throw XCTSkip("need two flac fixtures") }
+        let tmp = try Fixtures.tempDir("framehash"); defer { try? FileManager.default.removeItem(at: tmp) }
+        let copy = tmp.appendingPathComponent("a.flac").path
+        try FileManager.default.copyItem(atPath: files[0].path, toPath: copy)
+        let before = AudioHash.flacFrameMD5(copy)!
+        try TagWriter.write(path: copy, properties: ["TITLE": ["Completely different title"], "ALBUM": ["X"]], picture: nil, encoderStamp: nil)
+        XCTAssertEqual(AudioHash.flacFrameMD5(copy), before, "retag leaves the frame hash unchanged")
+        XCTAssertNotEqual(AudioHash.flacFrameMD5(files[1].path), before)
+        XCTAssertTrue(before.hasPrefix("f:"))
+    }
+}

@@ -1,6 +1,6 @@
 # Convertable — Design & Build Plan
 
-*Status: Phases 0–6 built; Phase 7 (first real batch) pending. Last updated 2026-09-05.*
+*Status: Phases 0–7 built; first real batch run. Phase 8 (first-run wizard) next. Last updated 2026-09-05.*
 
 ## 1. Purpose
 
@@ -372,6 +372,8 @@ Each phase ends with something you can run and judge.
 4. When the batch completes and the albums have been imported, sync the iPod and check: gapless, art, sort order, Sound Check, album grouping.
 5. Review tab: expect supersede proposals for legacy albums the batch replaced; approve one, confirm the legacy tracks leave Music and the files land in `.quarantine/<date>/legacy/`.
 6. Then either auto-continue (Settings) or keep starting batches by hand.
+
+**Phase 7 result (batch #3, Pink Floyd)**: 18 albums / 175 tracks, 23.5 GB in → **2.03 GB out in 39 min**; 174 ok, 1 failed — a genuinely corrupt FLAC (`flac -t` aborts), left in Activity with the error. Real out/in for these 24/96–24/192 vinyl rips is **0.089**, not the 0.27 planning guess: the estimate is now learned per run (persisting it is a follow-up). Imports flowed into the iPod library album by album while the batch ran. Fixed from the run: progress counters lost updates under concurrent events; audio hashing decoded whole 24-bit files (now a FLAC frame-region hash, no decode); CoreAudio-rejected FLACs now fall back to the reference `flac` decoder. Open: an album with a permanently failed track never reaches Music — an "add the good tracks anyway" action is still to build.
 
 **Known limitations at Phase 7**: the app links Homebrew's TagLib dylibs (`/opt/homebrew/opt/taglib`), so it runs only where `brew install taglib` has been done; bundling the dylibs is a packaging follow-up. The Auto-Add import method is declined with an explanation. Retag detection between full scans relies on the daily full scan (directory mtimes do not change on in-place edits).
 

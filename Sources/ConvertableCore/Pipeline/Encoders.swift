@@ -56,6 +56,14 @@ public struct AfconvertEncoder: Encoder {
     public func encode(_ spec: EncoderSpec, input: String, output: String, sourceChannels: Int) throws {
         guard let path = Tools.locate("afconvert") else { throw Tools.ToolError.failed("afconvert", status: 127, stderr: "not found") }
         let r = try Tools.run(path, arguments(spec, sourceChannels: sourceChannels) + [input, output], timeout: 900)
+        if r.status != 0, input.lowercased().hasSuffix(".flac"), let flac = Tools.locate("flac") {
+            // CoreAudio rejects some valid FLACs (e.g. unusual block sizes). The reference decoder does not.
+            let wav = (input as NSString).deletingPathExtension + ".refdecoded.wav"
+            defer { try? FileManager.default.removeItem(atPath: wav) }
+            try Encoders.check(try Tools.run(flac, ["-d", "--silent", "--force", "-o", wav, input], timeout: 900), flac)
+            try Encoders.check(try Tools.run(path, arguments(spec, sourceChannels: sourceChannels) + [wav, output], timeout: 900), path)
+            return
+        }
         try Encoders.check(r, path)
     }
 }

@@ -32,6 +32,31 @@ public enum AudioHash {
         return nil
     }
 
+    /// MD5 of a FLAC's audio frames (everything after the metadata blocks). Retags rewrite only the
+    /// metadata blocks, so this identifies the audio exactly, at the cost of one sequential read and no decode.
+    public static func flacFrameMD5(_ path: String) -> String? {
+        guard let fh = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? fh.close() }
+        guard var head = try? fh.read(upToCount: 10), head.count >= 4 else { return nil }
+        var offset: UInt64 = 4
+        if head.starts(with: [0x49, 0x44, 0x33]) {
+            let sz = (Int(head[6] & 0x7f) << 21) | (Int(head[7] & 0x7f) << 14) | (Int(head[8] & 0x7f) << 7) | Int(head[9] & 0x7f)
+            offset = UInt64(10 + sz); try? fh.seek(toOffset: offset)
+            guard let h2 = try? fh.read(upToCount: 4) else { return nil }; head = h2; offset += 4
+        } else { try? fh.seek(toOffset: 4) }
+        guard head.prefix(4) == Data("fLaC".utf8) else { return nil }
+        while let hdr = try? fh.read(upToCount: 4), hdr.count == 4 {
+            let last = hdr[0] & 0x80 != 0
+            let len = UInt64((Int(hdr[1]) << 16) | (Int(hdr[2]) << 8) | Int(hdr[3]))
+            offset += 4 + len
+            try? fh.seek(toOffset: offset)
+            if last { break }
+        }
+        var md5 = Insecure.MD5()
+        while let chunk = try? fh.read(upToCount: 4 << 20), !chunk.isEmpty { md5.update(data: chunk) }
+        return "f:" + md5.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
     /// MD5 of decoded PCM in the file's native processing format (float32, deinterleaved — deterministic
     /// for a given decoder). Used for ALAC/WAV/AIFF and for FLACs whose header MD5 is unset, which WEB rips often are.
     public static func decodedPCMMD5(_ path: String) throws -> String {
@@ -91,7 +116,7 @@ public enum AudioHash {
     /// Whichever is cheapest for the file. Lossy files use a hash of the raw bytes minus nothing — their
     /// "audio" is the file; a retag of an MP3 changes the hash, which correctly triggers a re-copy.
     public static func audioMD5(_ path: String, ext: String) -> String? {
-        if ext == ".flac", let m = flacStreamMD5(path) { return m }
+        if ext == ".flac" { return flacStreamMD5(path) ?? flacFrameMD5(path) ?? fileMD5(path) }
         if Classifier.losslessExts.contains(ext) || ext == ".m4a", let m = try? decodedPCMMD5(path) { return m }
         return fileMD5(path)
     }

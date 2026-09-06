@@ -316,6 +316,8 @@ public actor AppController {
 
     private func pipelineEvent(_ ev: Pipeline.Event) async {
         guard var b = batch else { return }
+        var activity: ActivityRow?
+        // Read-modify-write with no suspension in between: events arrive concurrently.
         switch ev {
         case let .albumStarted(a):
             b.currentAlbum = "\(a.displayArtist) — \(a.displayAlbum)"; b.currentTracks = a.tracks.map(\.source.fileName)
@@ -327,16 +329,16 @@ public actor AppController {
                 let ratio = Double(r.outputBytes) / Double(r.track.source.size)
                 learnedRatio = learnedRatio.map { $0 * 0.9 + ratio * 0.1 } ?? ratio
             }
-            let row = ActivityRow(id: 0, at: Date().timeIntervalSince1970, level: r.ok ? "info" : "error", category: "pipeline",
-                                  message: r.ok ? "\(r.track.action.label) → \((r.track.outputRelPath as NSString).lastPathComponent)" : "failed: \(r.error ?? "?")",
-                                  relPath: r.track.source.relPath)
-            await bus.publish(.activity(row))
+            activity = ActivityRow(id: 0, at: Date().timeIntervalSince1970, level: r.ok ? "info" : "error", category: "pipeline",
+                                   message: r.ok ? "\(r.track.action.label) → \((r.track.outputRelPath as NSString).lastPathComponent)" : "failed: \(r.error ?? "?")",
+                                   relPath: r.track.source.relPath)
         case .albumFinished:
             b.albumsDone += 1; b.currentAlbum = nil
             importIntoMusic()   // a finished album can go straight to Music
         case .message: break
         }
         batch = b
+        if let activity { await bus.publish(.activity(activity)) }
         await bus.publish(.batchProgress(b))
     }
 
