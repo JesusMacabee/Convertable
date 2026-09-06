@@ -1,0 +1,58 @@
+import AppKit
+import ConvertableCore
+import ConvertableWeb
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var controller: AppController!
+    private var server: WebServer!
+    private var statusItem: StatusItemController!
+    private var serverTask: Task<Void, Never>?
+    private var eventTask: Task<Void, Never>?
+    private let notifier = Notifier()
+    private var lastSnapshot: StatusSnapshot?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        do {
+            let settings = try Settings.load()
+            if !FileManager.default.fileExists(atPath: Settings.defaultURL.path) { try settings.save() }
+            let store = try Store(path: Settings.defaultDatabaseURL.path)
+            controller = AppController(settings: settings, store: store)
+            server = WebServer(controller: controller, settings: settings)
+        } catch {
+            let alert = NSAlert(); alert.messageText = "Convertable could not start"; alert.informativeText = "\(error)"; alert.runModal()
+            NSApp.terminate(nil); return
+        }
+
+        statusItem = StatusItemController(controller: controller, dashboardURL: server.localURL, notifier: notifier)
+        notifier.requestPermissionIfBundled()
+
+        serverTask = Task { [server] in
+            do { try await server!.run() }
+            catch { await MainActor.run { self.statusItem.serverError = "\(error)" } }
+        }
+        Task { await controller.startScheduler() }
+
+        eventTask = Task { [weak self] in
+            guard let self else { return }
+            let (_, stream) = await controller.bus.subscribe()
+            await self.apply(await controller.status())
+            for await ev in stream {
+                switch ev {
+                case let .status(s): await self.apply(s)
+                case let .batchProgress(b): await MainActor.run { self.statusItem.batch = b }
+                default: break
+                }
+            }
+        }
+    }
+
+    @MainActor private func apply(_ s: StatusSnapshot) {
+        statusItem.snapshot = s
+        notifier.transition(from: lastSnapshot, to: s)
+        lastSnapshot = s
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        Task { await controller?.shutdown() }
+    }
+}

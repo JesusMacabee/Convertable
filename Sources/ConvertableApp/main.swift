@@ -1,8 +1,8 @@
 import AppKit
-import ConvertableCore
-import ConvertableWeb
 
-// Phase 0 placeholder: proves the app target links AppKit + Core + Web. Menu bar UI arrives in Phase 5.
+// Menu bar app entry point. No Dock icon, no main window: the status item and the web dashboard are the UI.
 let app = NSApplication.shared
+let delegate = AppDelegate()
+app.delegate = delegate
 app.setActivationPolicy(.accessory)
-print("Convertable app placeholder — menu bar UI is Phase 5. Settings at \(Settings.defaultURL.path)")
+app.run()

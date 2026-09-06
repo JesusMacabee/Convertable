@@ -1,6 +1,6 @@
 # Convertable — Design & Build Plan
 
-*Status: Phases 0–4 built (scaffold, scanner/planner, pipeline, web dashboard, Music bridge). Last updated 2026-09-05.*
+*Status: Phases 0–5 built (scaffold, scanner/planner, pipeline, web dashboard, Music bridge, menu bar app). Last updated 2026-09-05.*
 
 ## 1. Purpose
 
@@ -288,6 +288,7 @@ Both modes are gated identically; the manual library switching the user plans is
 - **Icon states**: idle · scanning · converting (with percent) · paused · batch complete · attention (approvals / volume missing / wrong library / failures). Badge = pending approvals.
 - **Popover**: one-line status, current track, batch progress (in / out / remaining), queue depth, next scan; buttons *Pause/Resume*, *Start next batch*, *Scan now*, **Open Dashboard**, *Quit*.
 - Launch at login via `SMAppService`. Ad-hoc signed `.app` in `/Applications`.
+- *Built in Phase 5.* `Scripts/build-app.sh` assembles `build/Convertable.app` from the SwiftPM release build (binary + `convertctl` + the dashboard resource bundle in `Contents/Resources`), writes `Info.plist` (`com.mikeblumberg.convertable`, `LSUIElement`, Automation usage string), ad-hoc signs; `--install` copies to `/Applications` and relaunches. The status item title shows batch percent while converting, or the pending-approval count. Notifications and launch-at-login only work from the bundle; the bare `swift run` binary degrades to log lines.
 
 ### 13.2 Web dashboard (the full UI)
 Served by the app itself; opens at `http://<mac>.local:<port>/` from the popover, or from a phone/tablet on the LAN.
