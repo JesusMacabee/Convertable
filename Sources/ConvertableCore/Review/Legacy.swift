@@ -85,7 +85,7 @@ public struct SupersedeMatcher {
     @discardableResult
     public func run() throws -> Int {
         var created = 0
-        let covered = try coveredLegacyIDs()
+        var covered = try coveredLegacyIDs()
         // Mirror albums: complete, with tags known.
         let albums = try store.albumSummaries().filter { $0.mirrored == $0.tracks && $0.tracks > 0 && $0.displayArtist != nil && $0.displayAlbum != nil }
         for a in albums {
@@ -118,6 +118,7 @@ public struct SupersedeMatcher {
                 return .init(outputID: nil, legacyID: l.id, relPath: l.root + "/" + l.rel, musicPersistentID: l.pid, bytes: l.size, counterpartPersistentID: counterpart)
             }
             _ = try store.insertProposal(kind: "supersede", album: a.key, title: title, reason: reason, items: items, now: clock())
+            covered.formUnion(legacy.map(\.id))   // one proposal per legacy album, even when several mirror editions match it
             created += 1
         }
         return created
@@ -142,9 +143,19 @@ public struct SupersedeMatcher {
 
     /// Applies an approved supersede proposal with the library open: carry stats to the mirror track, remove the
     /// legacy entry from Music, move the legacy file into quarantine. Returns items still to do.
-    public static func apply(_ p: Store.Proposal, store: Store, bridge: MusicBridge, quarantineDir: String) -> [Store.ProposalItem] {
+    public static func apply(_ p: Store.Proposal, store: Store, bridge: MusicBridge, quarantineDir: String, roots: [String] = []) -> [Store.ProposalItem] {
         var remaining: [Store.ProposalItem] = []
-        for item in p.items {
+        var items = p.items
+        if items.contains(where: { $0.musicPersistentID == nil && $0.legacyID != nil }) {
+            // Never quarantine a file Music still references: map persistent IDs first.
+            _ = try? mapMusicIDs(store: store, roots: roots, bridge: bridge)
+            items = items.map { i in
+                var i = i
+                if i.musicPersistentID == nil, let lid = i.legacyID, case let .text(pid)? = try? store.db.scalar("SELECT music_persistent_id FROM legacy_files WHERE id=?", [.integer(lid)]) { i.musicPersistentID = pid }
+                return i
+            }
+        }
+        for item in items {
             do {
                 if let pid = item.musicPersistentID {
                     if let to = item.counterpartPersistentID { try? bridge.copyStats(from: pid, to: to) }

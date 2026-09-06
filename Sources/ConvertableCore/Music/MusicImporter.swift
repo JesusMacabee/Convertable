@@ -143,7 +143,7 @@ public struct MusicImporter {
         }
         if let reviewer, let approved = try? store.proposals(states: ["approved"]) {
             for p in approved where p.kind == "supersede" {
-                let remaining = SupersedeMatcher.apply(p, store: store, bridge: bridge, quarantineDir: reviewer.quarantineDir())
+                let remaining = SupersedeMatcher.apply(p, store: store, bridge: bridge, quarantineDir: reviewer.quarantineDir(), roots: settings.legacyMediaRoots)
                 if remaining.isEmpty { try? store.setProposalState(p.id, "done"); out.removed += p.items.count }
                 else {
                     out.failed += remaining.count

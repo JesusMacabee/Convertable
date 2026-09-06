@@ -29,8 +29,16 @@ final class SupersedeTests: XCTestCase {
         try store.db.run("INSERT INTO legacy_files (root, rel_path, size, album_artist_norm, album_norm, title_norm, indexed_at) VALUES ('/L','Adele/21/1.m4a',5,?,?,'x',1)", [.text(Norm.key("Adele")), .text(Norm.key("21"))])
         try store.db.run("INSERT INTO legacy_files (root, rel_path, size, album_artist_norm, album_norm, title_norm, indexed_at) VALUES ('/L','CAKE/Fashion Nugget/1.m4a',5,?,?,'x',1)", [.text(Norm.key("CAKE")), .text(Norm.key("Fashion Nugget"))])
 
+        // A second mirror edition of the same album must not produce a second proposal for the same legacy files.
+        for (i, t) in ["No Advance", "No Heart", "X"].enumerated() {
+            let sid = try store.db.insert("""
+                INSERT INTO source_files (rel_path, artist_dir, album_dir, ext, kind, size, mtime, stable_since, observations, first_seen, last_seen_scan, tag_albumartist, tag_album)
+                VALUES (?,?,?,'.flac','lossless',10,1,1,3,1,1,'21 Savage & Metro Boomin','Savage Mode')
+                """, [.text("21 Savage/Savage Mode (Vinyl)/0\(i + 1) - \(t).flac"), .text("21 Savage"), .text("Savage Mode (Vinyl)")])
+            try store.db.run("INSERT INTO outputs (source_id, rel_path, encoder_profile, verify_ok, music_persistent_id, encoded_at) VALUES (?,?,'x',1,?,1)", [.integer(sid), .text("21 Savage/Savage Mode (Vinyl)/0\(i + 1) - \(t).m4a"), .text("V\(i)")])
+        }
         let m = SupersedeMatcher(store: store, profile: .ipodClassic)
-        XCTAssertEqual(try m.run(), 1, "only the complete mirror album with a legacy twin")
+        XCTAssertEqual(try m.run(), 1, "one proposal per legacy album, even with two mirror editions")
         XCTAssertEqual(try m.run(), 0, "not proposed twice")
         let p = try store.proposals()[0]
         XCTAssertEqual(p.kind, "supersede"); XCTAssertEqual(p.items.count, 3)
