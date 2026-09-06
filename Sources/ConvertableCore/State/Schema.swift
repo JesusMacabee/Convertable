@@ -165,6 +165,10 @@ public enum Schema {
         ALTER TABLE legacy_files ADD COLUMN album_artist TEXT;
         ALTER TABLE legacy_files ADD COLUMN album TEXT;
         """,
+        // v5 — tag policy versioning: bump TagPolicy.version to re-sync every mirror file's metadata from its source
+        """
+        ALTER TABLE outputs ADD COLUMN tag_policy INTEGER NOT NULL DEFAULT 0;
+        """,
     ]
 
     public static var currentVersion: Int { migrations.count }

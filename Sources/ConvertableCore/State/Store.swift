@@ -176,7 +176,7 @@ public final class Store: @unchecked Sendable {
         OutputFile(id: r.int("id")!, sourceID: r.int("source_id")!, relPath: r.text("rel_path")!, size: r.int("size"),
                    encoderProfile: r.text("encoder_profile")!, audioMD5: r.text("audio_md5"), tagHash: r.text("tag_hash"),
                    verifyOK: (r.int("verify_ok") ?? 0) != 0, musicPersistentID: r.text("music_persistent_id"),
-                   encodedAt: r.double("encoded_at"), tagsWrittenAt: r.double("tags_written_at"))
+                   encodedAt: r.double("encoded_at"), tagsWrittenAt: r.double("tags_written_at"), tagPolicy: Int(r.int("tag_policy") ?? 0))
     }
 
     /// An output whose source has gone missing but whose audio matches — the signature of a rename/move.
@@ -286,7 +286,7 @@ public final class Store: @unchecked Sendable {
                    SUM(CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END) mirrored,
                    MIN(s.first_seen) first_seen, MAX(s.stable_since) last_change, MIN(s.observations) min_obs,
                    MAX(s.tag_albumartist) tag_aa, MAX(s.tag_album) tag_album,
-                   SUM(CASE WHEN o.id IS NOT NULL AND COALESCE(o.tags_written_at, o.encoded_at) IS NOT NULL AND s.stable_since > COALESCE(o.tags_written_at, o.encoded_at) THEN 1 ELSE 0 END) stale
+                   SUM(CASE WHEN o.id IS NOT NULL AND ((COALESCE(o.tags_written_at, o.encoded_at) IS NOT NULL AND s.stable_since > COALESCE(o.tags_written_at, o.encoded_at)) OR o.tag_policy < \(TagPolicy.version)) THEN 1 ELSE 0 END) stale
             FROM source_files s
             LEFT JOIN outputs o ON o.source_id = s.id AND o.verify_ok = 1
             WHERE s.status='active' AND s.kind != 'other'

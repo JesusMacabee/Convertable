@@ -17,7 +17,7 @@ public enum Verifier {
         return (Int(Double(f.length) / sr * 1000), Int(sr), Int(f.fileFormat.channelCount))
     }
 
-    public static func verify(output: String, sourceDurationMs: Int, expectedSampleRate: Int?, expectedTags: [String: [String]], toleranceMs: Int = 100) -> Report {
+    public static func verify(output: String, sourceDurationMs: Int, expectedSampleRate: Int?, expectedTags: [String: [String]], expectPicture: Bool = false, toleranceMs: Int = 100) -> Report {
         var problems: [String] = []
         var d = (ms: 0, sampleRate: 0, channels: 0)
         do { d = try durationMs(output) } catch { return Report(ok: false, problems: ["cannot open: \(error)"], durationMs: 0, sampleRate: 0, channels: 0) }
@@ -31,6 +31,7 @@ public enum Verifier {
                     else if got != want { problems.append("\(key): \(got) ≠ \(want)") }
                 } else if expectedTags[key] != nil { problems.append("\(key) missing") }
             }
+            if expectPicture, info.pictures.isEmpty { problems.append("cover art missing from output") }
         } else { problems.append("tags unreadable") }
         return Report(ok: problems.isEmpty, problems: problems, durationMs: d.ms, sampleRate: d.sampleRate, channels: d.channels)
     }

@@ -157,7 +157,7 @@ public final class Pipeline: @unchecked Sendable {
         if let existing = track.existingOutput {
             let sameAudio = audioMD5 != nil && audioMD5 == existing.audioMD5
             let now = Date().timeIntervalSince1970
-            if sameAudio && tagHash == existing.tagHash {
+            if sameAudio && tagHash == existing.tagHash && existing.tagPolicy >= TagPolicy.version {
                 try store(sync: { try $0.db.run("UPDATE outputs SET tags_written_at=? WHERE id=?", [.real(now), .integer(existing.id)]) })
                 try? store(sync: { try $0.log("info", "pipeline", "source touched, nothing changed", relPath: src.relPath) })
                 return (existing.size ?? 0, Verifier.Report(ok: true, problems: [], durationMs: srcDuration, sampleRate: 0, channels: 0))
@@ -166,14 +166,14 @@ public final class Pipeline: @unchecked Sendable {
                 // Retag in place: no re-encode, same path, Music keeps its reference.
                 try await shareIO.copy(from: config.mirrorRoot + "/" + existing.relPath, to: localOut)
                 try TagWriter.write(path: localOut, properties: carried, picture: picture, encoderStamp: stamp)
-                let report = Verifier.verify(output: localOut, sourceDurationMs: srcDuration, expectedSampleRate: nil, expectedTags: carried)
+                let report = Verifier.verify(output: localOut, sourceDurationMs: srcDuration, expectedSampleRate: nil, expectedTags: carried, expectPicture: picture != nil)
                 guard report.ok else { throw PipelineError.verifyFailed(report.problems) }
                 let outSize = (try? FileManager.default.attributesOfItem(atPath: localOut)[.size] as? NSNumber)?.int64Value ?? 0
                 try await shareIO.publish(localFile: localOut, to: config.mirrorRoot + "/" + existing.relPath)
                 try store(sync: { s in
                     try s.setTags(id: src.id, artist: info.artist, albumArtist: info.albumArtist, album: info.album, audioMD5: audioMD5, tagHash: tagHash)
-                    try s.db.run("UPDATE outputs SET size=?, tag_hash=?, tags_written_at=?, music_refresh_pending=CASE WHEN music_persistent_id IS NULL THEN 0 ELSE 1 END WHERE id=?",
-                                 [.integer(outSize), .text(tagHash), .real(now), .integer(existing.id)])
+                    try s.db.run("UPDATE outputs SET size=?, tag_hash=?, tags_written_at=?, tag_policy=?, music_refresh_pending=CASE WHEN music_persistent_id IS NULL THEN 0 ELSE 1 END WHERE id=?",
+                                 [.integer(outSize), .text(tagHash), .real(now), .integer(Int64(TagPolicy.version)), .integer(existing.id)])
                     try s.log("info", "pipeline", "retagged in place → \(existing.relPath)", relPath: src.relPath)
                 })
                 return (outSize, report)
@@ -195,11 +195,11 @@ public final class Pipeline: @unchecked Sendable {
                 if tagHash != orphan.tagHash {
                     try await shareIO.copy(from: newPath, to: localOut)
                     try TagWriter.write(path: localOut, properties: carried, picture: picture, encoderStamp: stamp)
-                    let report = Verifier.verify(output: localOut, sourceDurationMs: srcDuration, expectedSampleRate: nil, expectedTags: carried)
+                    let report = Verifier.verify(output: localOut, sourceDurationMs: srcDuration, expectedSampleRate: nil, expectedTags: carried, expectPicture: picture != nil)
                     guard report.ok else { throw PipelineError.verifyFailed(report.problems) }
                     try await shareIO.publish(localFile: localOut, to: newPath)
-                    try store(sync: { try $0.db.run("UPDATE outputs SET tag_hash=?, tags_written_at=?, music_refresh_pending=CASE WHEN music_persistent_id IS NULL THEN 0 ELSE 1 END WHERE id=?",
-                                                    [.text(tagHash), .real(Date().timeIntervalSince1970), .integer(orphan.id)]) })
+                    try store(sync: { try $0.db.run("UPDATE outputs SET tag_hash=?, tags_written_at=?, tag_policy=?, music_refresh_pending=CASE WHEN music_persistent_id IS NULL THEN 0 ELSE 1 END WHERE id=?",
+                                                    [.text(tagHash), .real(Date().timeIntervalSince1970), .integer(Int64(TagPolicy.version)), .integer(orphan.id)]) })
                 }
                 let size = (try? await shareIO.size(of: newPath)) ?? 0
                 return (size, Verifier.Report(ok: true, problems: [], durationMs: srcDuration, sampleRate: 0, channels: 0))
@@ -222,7 +222,7 @@ public final class Pipeline: @unchecked Sendable {
         try TagWriter.write(path: localOut, properties: carried, picture: picture, encoderStamp: stamp)
 
         // 5. Verify.
-        let report = Verifier.verify(output: localOut, sourceDurationMs: srcDuration, expectedSampleRate: expectedRate, expectedTags: carried)
+        let report = Verifier.verify(output: localOut, sourceDurationMs: srcDuration, expectedSampleRate: expectedRate, expectedTags: carried, expectPicture: picture != nil)
         guard report.ok else { throw PipelineError.verifyFailed(report.problems) }
         let outSize = (try? FileManager.default.attributesOfItem(atPath: localOut)[.size] as? NSNumber)?.int64Value ?? 0
 
@@ -235,12 +235,12 @@ public final class Pipeline: @unchecked Sendable {
         try store(sync: { s in
             try s.setTags(id: src.id, artist: info.artist, albumArtist: info.albumArtist, album: info.album, audioMD5: audioMD5, tagHash: tagHash)
             try s.db.run("""
-                INSERT INTO outputs (source_id, rel_path, size, encoder_profile, audio_md5, tag_hash, encoded_at, tags_written_at, verify_ok)
-                VALUES (?,?,?,?,?,?,?,?,1)
+                INSERT INTO outputs (source_id, rel_path, size, encoder_profile, audio_md5, tag_hash, encoded_at, tags_written_at, verify_ok, tag_policy)
+                VALUES (?,?,?,?,?,?,?,?,1,?)
                 ON CONFLICT(rel_path) DO UPDATE SET source_id=excluded.source_id, size=excluded.size, encoder_profile=excluded.encoder_profile,
-                    audio_md5=excluded.audio_md5, tag_hash=excluded.tag_hash, encoded_at=excluded.encoded_at, tags_written_at=excluded.tags_written_at, verify_ok=1
+                    audio_md5=excluded.audio_md5, tag_hash=excluded.tag_hash, encoded_at=excluded.encoded_at, tags_written_at=excluded.tags_written_at, verify_ok=1, tag_policy=excluded.tag_policy
                 """, [.integer(src.id), .text(track.outputRelPath), .integer(outSize), .text(self.config.profileID),
-                      Database.Value(audioMD5), .text(tagHash), .real(now), .real(now)])
+                      Database.Value(audioMD5), .text(tagHash), .real(now), .real(now), .integer(Int64(TagPolicy.version))])
             if let existing = track.existingOutput {
                 try s.db.run("UPDATE outputs SET music_refresh_pending=CASE WHEN music_persistent_id IS NULL THEN 0 ELSE 1 END WHERE id=?", [.integer(existing.id)])
             }

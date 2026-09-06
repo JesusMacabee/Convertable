@@ -166,3 +166,25 @@ final class MusicPendingProcessingTests: XCTestCase {
         XCTAssertEqual(try store.proposal(id: pid)?.state, "done")
     }
 }
+
+final class TagPolicyTests: XCTestCase {
+    func testOutputsUnderOlderPolicyAreReplannedForRetag() throws {
+        let store = try Store.inMemory()
+        let sid = try store.db.insert("INSERT INTO source_files (rel_path, artist_dir, album_dir, ext, kind, size, mtime, stable_since, observations, first_seen, last_seen_scan) VALUES ('A/B/1.flac','A','B','.flac','lossless',10,1,1,3,1,1)")
+        try store.db.run("INSERT INTO outputs (source_id, rel_path, encoder_profile, verify_ok, encoded_at, tags_written_at, tag_policy) VALUES (?, 'A/B/1.m4a', 'x', 1, 5, 5, 0)", [.integer(sid)])
+        let plan = try Planner(store: store, profile: .ipodClassic, fileSettleSeconds: 0, albumSettleSeconds: 0).plan(Selection(mode: .everything, ignoreSettle: true))
+        XCTAssertEqual(plan.albums.count, 1); XCTAssertNotNil(plan.albums[0].tracks[0].existingOutput, "older tag policy → re-tag, not re-encode")
+        try store.db.run("UPDATE outputs SET tag_policy=?", [.integer(Int64(TagPolicy.version))])
+        XCTAssertTrue(try Planner(store: store, profile: .ipodClassic, fileSettleSeconds: 0, albumSettleSeconds: 0).plan(Selection(mode: .everything, ignoreSettle: true)).albums.isEmpty)
+    }
+    func testVerifierFlagsMissingArt() throws {
+        let src = try Fixtures.first("flac", containing: "16BIT")
+        let tmp = try Fixtures.tempDir("verify-art"); defer { try? FileManager.default.removeItem(at: tmp) }
+        let out = tmp.appendingPathComponent("o.m4a").path
+        try AfconvertEncoder().encode(.ipodAAC, input: src.path, output: out, sourceChannels: 2)
+        try TagWriter.write(path: out, properties: ["TITLE": ["t"]], picture: nil, encoderStamp: nil)
+        let d = try Verifier.durationMs(out).ms
+        XCTAssertFalse(Verifier.verify(output: out, sourceDurationMs: d, expectedSampleRate: 44100, expectedTags: ["TITLE": ["t"]], expectPicture: true).ok)
+        XCTAssertTrue(Verifier.verify(output: out, sourceDurationMs: d, expectedSampleRate: 44100, expectedTags: ["TITLE": ["t"]], expectPicture: false).ok)
+    }
+}

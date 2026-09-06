@@ -145,6 +145,9 @@ public enum TagHash {
 /// Which source tags travel to the output. TagLib's property map already normalises names across
 /// FLAC / MP3 / MP4, so this is a deny-list of junk rather than a mapping table.
 public enum TagPolicy {
+    /// Bump when the carried tag set or art handling changes; every output written under an older
+    /// version is re-tagged from its source on the next pass (no re-encode).
+    public static let version = 1
     static let dropped: Set<String> = [
         "ENCODER", "ENCODEDBY", "ENCODING", "ENCODERSETTINGS", "ENCODER SETTINGS",
         "COMPATIBLE_BRANDS", "MAJOR_BRAND", "MINOR_VERSION",      // ffmpeg container leftovers

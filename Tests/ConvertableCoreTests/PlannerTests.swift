@@ -75,11 +75,11 @@ final class PlannerTests: XCTestCase {
         try album("A", "1", tracks: 3, size: 10)
         let ids = try store.db.query("SELECT id FROM source_files ORDER BY id") { $0.int(0)! }
         for id in ids.prefix(2) {
-            try store.db.run("INSERT INTO outputs (source_id, rel_path, encoder_profile, verify_ok) VALUES (?, ?, 'x', 1)", [.integer(id), .text("A/1/\(id).m4a")])
+            try store.db.run("INSERT INTO outputs (source_id, rel_path, encoder_profile, verify_ok, tag_policy) VALUES (?, ?, 'x', 1, ?)", [.integer(id), .text("A/1/\(id).m4a"), .integer(Int64(TagPolicy.version))])
         }
         var plan = try planner().plan(Selection(mode: .everything))
         XCTAssertEqual(plan.albums.count, 1); XCTAssertEqual(plan.albums[0].tracks.count, 1, "only the unmirrored track is planned")
-        try store.db.run("INSERT INTO outputs (source_id, rel_path, encoder_profile, verify_ok) VALUES (?, ?, 'x', 1)", [.integer(ids[2]), .text("A/1/\(ids[2]).m4a")])
+        try store.db.run("INSERT INTO outputs (source_id, rel_path, encoder_profile, verify_ok, tag_policy) VALUES (?, ?, 'x', 1, ?)", [.integer(ids[2]), .text("A/1/\(ids[2]).m4a"), .integer(Int64(TagPolicy.version))])
         plan = try planner().plan(Selection(mode: .everything))
         XCTAssertTrue(plan.albums.isEmpty)
         XCTAssertEqual(plan.ineligible.first?.1, .nothingToDo)

@@ -52,7 +52,8 @@ public struct Planner {
                 guard a.isWork else { continue }
                 if let o = try store.output(forSource: f.id), o.verifyOK {
                     // Already mirrored; only re-visit if the source changed after the output was written.
-                    if let written = o.tagsWrittenAt ?? o.encodedAt, f.stableSince > written { work.append((f, a, o)) }
+                    if o.tagPolicy < TagPolicy.version { work.append((f, a, o)) }
+                    else if let written = o.tagsWrittenAt ?? o.encodedAt, f.stableSince > written { work.append((f, a, o)) }
                     continue
                 }
                 work.append((f, a, nil))
