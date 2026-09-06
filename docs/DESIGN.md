@@ -236,7 +236,20 @@ ID3 (MP3 copy-through) uses the equivalent frames. Anything unmapped is logged o
 
 ## 10. Library scale and sizing
 
-*Being filled in from the survey running against the share.* Known so far: 17,276 FLAC files, 557 artist directories, ~23.7k files total, plus MP3s and other formats. Legacy AAC library: 12,377 files / 124 GB. iPod capacity: 1 TB. Expected FLAC→AAC ratio ≈ 4:1 for CD-rate, ≈ 8–10:1 for 24/96 sources.
+Measured by the Phase 1 scanner (2026-09-05, full scan over SMB in 184 s):
+
+| | |
+|---|---|
+| Source tree | 2,789 directories, 23,386 files |
+| Audio files | **21,509** — 17,689 lossless (FLAC/WAV/ALAC…) + 3,820 lossy (MP3 / AAC already in the tree → copy-through) |
+| Artists / albums | 505 artist directories with audio (of 557 total) / 1,813 albums |
+| Source bytes | **1.06 TB** |
+| `.m4a` containers sniffed | 1,192 (ALAC vs AAC resolved by reading the `stsd` box) |
+| Largest artists | King Gizzard 37.7 GB, Goose 35.5 GB, Grateful Dead 34.0 GB, Pink Floyd 23.5 GB |
+| Legacy AAC library | 12,377 files / 124 GB (separate; see §12 supersede) |
+| iPod capacity | 1 TB |
+
+Output estimate at the default profile: lossless ×0.27 (planning ratio, refined from real outputs as they accumulate; hi-res sources come out lower) + lossy 1:1 → on the order of **300–350 GB** for the whole tree. Fits the iPod with room to spare.
 
 ## 11. Music.app bridge
 

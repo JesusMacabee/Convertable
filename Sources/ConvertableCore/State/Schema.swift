@@ -3,7 +3,7 @@ import Foundation
 /// Versioned schema. Add a new entry to `migrations` for every change; never edit an applied one.
 public enum Schema {
     public static let migrations: [String] = [
-        // v1 — initial schema (see docs/DESIGN.md §5)
+        // v1 — initial schema (see docs/DESIGN.md §5). Editable until Phase 7; frozen after.
         """
         CREATE TABLE source_files (
             id              INTEGER PRIMARY KEY,
@@ -12,9 +12,12 @@ public enum Schema {
             album_dir       TEXT NOT NULL,
             ext             TEXT NOT NULL,
             kind            TEXT NOT NULL CHECK (kind IN ('lossless','lossy','other')),
+            codec           TEXT,
             size            INTEGER NOT NULL,
             mtime           REAL NOT NULL,
-            stable_since    REAL,
+            stable_since    REAL NOT NULL,
+            observations    INTEGER NOT NULL DEFAULT 1,
+            missing_since   REAL,
             audio_md5       TEXT,
             tag_hash        TEXT,
             tag_artist      TEXT,
@@ -28,6 +31,13 @@ public enum Schema {
         CREATE INDEX source_files_album ON source_files(artist_dir, album_dir);
         CREATE INDEX source_files_status ON source_files(status);
         CREATE INDEX source_files_md5 ON source_files(audio_md5);
+
+        CREATE TABLE directories (
+            rel_path        TEXT PRIMARY KEY,
+            mtime           REAL NOT NULL,
+            last_seen_scan  INTEGER NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','missing'))
+        );
 
         CREATE TABLE outputs (
             id                  INTEGER PRIMARY KEY,

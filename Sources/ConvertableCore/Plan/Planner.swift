@@ -1,0 +1,122 @@
+import Foundation
+
+/// Turns the scanned library plus a Selection into an ordered list of albums to process.
+/// Albums are the unit: never split across a cap, ordered pinned-first then oldest-first.
+public struct Planner {
+    public let store: Store
+    public let profile: Profile
+    public let fileSettleSeconds: Int
+    public let albumSettleSeconds: Int
+    public var clock: () -> Double = { Date().timeIntervalSince1970 }
+
+    public init(store: Store, profile: Profile, fileSettleSeconds: Int, albumSettleSeconds: Int) {
+        self.store = store; self.profile = profile
+        self.fileSettleSeconds = fileSettleSeconds; self.albumSettleSeconds = albumSettleSeconds
+    }
+
+    public func plan(_ selection: Selection) throws -> Plan {
+        let now = clock()
+        let pins = try store.pinnedArtists()
+        var summaries = try store.albumSummaries()
+
+        // Restrict to the selection.
+        switch selection.mode {
+        case let .artists(list):
+            let set = Set(list)
+            summaries = summaries.filter { set.contains($0.key.artistDir) }
+        case let .albums(list):
+            let set = Set(list)
+            summaries = summaries.filter { set.contains($0.key) }
+        case .size, .everything:
+            break
+        }
+
+        var candidates: [PlannedAlbum] = []
+        var ineligible: [(AlbumKey, Plan.Ineligibility)] = []
+
+        for s in summaries {
+            guard s.mirrored < s.tracks else { ineligible.append((s.key, .nothingToDo)); continue }
+            if !selection.ignoreSettle {
+                let fileWait = Double(fileSettleSeconds) - (now - s.lastChange)
+                let albumWait = Double(albumSettleSeconds) - (now - s.lastChange)
+                let wait = max(fileWait, albumWait)
+                if s.minObservations < 2 || wait > 0 {
+                    ineligible.append((s.key, .settling(secondsLeft: max(1, Int(wait.rounded(.up))))))
+                    continue
+                }
+            }
+            let files = try store.sourceFiles(in: s.key)
+            var work: [(SourceFile, Action)] = []
+            for f in files {
+                if let o = try store.output(forSource: f.id), o.verifyOK { continue }   // already mirrored
+                let a = profile.action(for: f)
+                if a.isWork { work.append((f, a)) }
+            }
+            guard !work.isEmpty else { ineligible.append((s.key, .allSkipped)); continue }
+            let mapping = PathMapping.outputRelPaths(for: work.map { ($0.0.relPath, $0.1) })
+            let tracks = work.map { f, a in
+                PlannedTrack(source: f, action: a, outputRelPath: mapping[f.relPath] ?? f.relPath,
+                             estimatedOutBytes: Planner.estimate(f, a))
+            }
+            candidates.append(PlannedAlbum(key: s.key, displayArtist: s.displayArtist ?? s.key.artistDir,
+                                           displayAlbum: s.displayAlbum ?? (s.key.albumDir.isEmpty ? "(loose files)" : s.key.albumDir),
+                                           tracks: tracks, pinned: pins.contains(s.key.artistDir), firstSeen: s.firstSeen))
+        }
+
+        // Order: pinned first, then oldest first_seen, then path.
+        candidates.sort {
+            if $0.pinned != $1.pinned { return $0.pinned }
+            if $0.firstSeen != $1.firstSeen { return $0.firstSeen < $1.firstSeen }
+            return $0.key < $1.key
+        }
+        // In artist/album modes, keep the user's own order of artists (after pins).
+        if case let .artists(list) = selection.mode {
+            let rank = Dictionary(uniqueKeysWithValues: list.enumerated().map { ($1, $0) })
+            candidates.sort {
+                if $0.pinned != $1.pinned { return $0.pinned }
+                let ra = rank[$0.key.artistDir] ?? .max, rb = rank[$1.key.artistDir] ?? .max
+                if ra != rb { return ra < rb }
+                return $0.key < $1.key
+            }
+        }
+
+        // Apply the cap album by album; never split an album.
+        var fits: [PlannedAlbum] = [], overflow: [PlannedAlbum] = []
+        var used: Int64 = 0
+        for a in candidates {
+            // An album larger than the whole cap still goes first rather than blocking forever.
+            if let cap = selection.cap, used + a.bytesIn > cap, !fits.isEmpty {
+                overflow.append(a); continue
+            }
+            fits.append(a); used += a.bytesIn
+        }
+
+        // For size/everything, "overflow" is just the backlog remaining after this batch.
+        var backlogAlbums = 0; var backlogBytes: Int64 = 0
+        if case .size = selection.mode { backlogAlbums = overflow.count; backlogBytes = overflow.reduce(0) { $0 + $1.bytesIn }; overflow = [] }
+        if case .everything = selection.mode, selection.cap != nil { backlogAlbums = overflow.count; backlogBytes = overflow.reduce(0) { $0 + $1.bytesIn }; overflow = [] }
+
+        return Plan(selection: selection, albums: fits, overflow: overflow, ineligible: ineligible, backlogAlbums: backlogAlbums, backlogBytes: backlogBytes)
+    }
+
+    static func estimate(_ f: SourceFile, _ a: Action) -> Int64 {
+        switch a {
+        case let .transcode(spec): return Int64(Double(f.size) * spec.estimatedRatio)
+        case .copyThrough: return f.size
+        case .skip: return 0
+        }
+    }
+}
+
+/// "25GB", "1.5 TB", "800MB", "1000000" → bytes (decimal units, matching Finder).
+public enum ByteParser {
+    public static func parse(_ s: String) -> Int64? {
+        let t = s.trimmingCharacters(in: .whitespaces).uppercased().replacingOccurrences(of: " ", with: "")
+        let units: [(String, Double)] = [("TB", 1e12), ("GB", 1e9), ("MB", 1e6), ("KB", 1e3), ("T", 1e12), ("G", 1e9), ("M", 1e6), ("K", 1e3), ("B", 1)]
+        for (u, m) in units where t.hasSuffix(u) {
+            guard let v = Double(t.dropLast(u.count)) else { return nil }
+            return Int64(v * m)
+        }
+        return Int64(t)
+    }
+}
