@@ -191,10 +191,15 @@ public struct SupersedeMatcher {
     /// With `deadOnly`, only entries Music reports as missing are considered — the safe choice when cleaning up.
     @discardableResult
     public static func mapMusicIDsByMetadata(store: Store, bridge: MusicBridge, deadOnly: Bool, onlyIDs: [Int64]? = nil) throws -> Int {
-        var sql = "SELECT id, album_artist, album, title_norm FROM legacy_files WHERE music_persistent_id IS NULL AND album IS NOT NULL AND album_artist IS NOT NULL"
+        var sql = "SELECT id, album_artist, album, title_norm, rel_path FROM legacy_files WHERE music_persistent_id IS NULL AND album IS NOT NULL AND album_artist IS NOT NULL"
         var params: [Database.Value] = []
         if let onlyIDs { sql += " AND id IN (\(onlyIDs.map { _ in "?" }.joined(separator: ",")))"; params = onlyIDs.map { .integer($0) } }
-        let rows = try store.db.query(sql, params) { ($0.int(0)!, $0.text(1)!, $0.text(2)!, $0.text(3) ?? "") }
+        // Untitled files are named by Music after their file name; match on that when the title tag is empty.
+        let rows = try store.db.query(sql, params) { r -> (Int64, String, String, String) in
+            let title = r.text(3) ?? ""
+            let stem = ((r.text(4) ?? "") as NSString).lastPathComponent
+            return (r.int(0)!, r.text(1)!, r.text(2)!, title.isEmpty ? Norm.key((stem as NSString).deletingPathExtension) : title)
+        }
         var byAlbum: [String: [(Int64, String)]] = [:]
         var keyMeta: [String: (String, String)] = [:]
         for (id, artist, album, title) in rows { let k = artist + "\u{1F}" + album; byAlbum[k, default: []].append((id, title)); keyMeta[k] = (artist, album) }
