@@ -11,7 +11,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let notifier: Notifier
     private let menu = NSMenu()
 
-    var snapshot: StatusSnapshot? { didSet { render() } }
+    var snapshot: StatusSnapshot? { didSet { if snapshot?.batch == nil { batch = nil }; render() } }
     var batch: BatchProgress? { didSet { if snapshot != nil { render() } } }
     var serverError: String? { didSet { render() } }
 
@@ -50,7 +50,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         guard let s = snapshot else { return }
         item.button?.image = Self.icon(for: s.state)
         var title = ""
-        if let b = s.batch ?? batch, s.state == .converting, b.bytesInTotal > 0 {
+        if let b = batch ?? s.batch, s.state == .converting, b.bytesInTotal > 0 {
             title = " \(Int(100 * Double(b.bytesInDone) / Double(b.bytesInTotal)))%"
         } else if s.pendingApprovals > 0 {
             title = " \(s.pendingApprovals)"
@@ -76,7 +76,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(disabled(s.volumeAvailable ? "● \(s.volume)" : "○ \(s.volume)"))
         menu.addItem(disabled(s.musicLibraryOpen ? "● Music: iPod library open" : (s.musicRunning ? "○ Music: other library open" : "○ Music not running")
                               + (s.musicPending > 0 ? " · \(s.musicPending) waiting" : "")))
-        if let b = s.batch ?? batch, s.state == .converting || s.state == .paused {
+        if let b = batch ?? s.batch, s.state == .converting || s.state == .paused {
             menu.addItem(.separator())
             menu.addItem(disabled("Batch #\(b.id): \(b.albumsDone)/\(b.albumsTotal) albums · \(b.tracksDone)/\(b.tracksTotal) tracks"))
             menu.addItem(disabled("\(ByteCount.string(b.bytesInDone)) of \(ByteCount.string(b.bytesInTotal)) → \(ByteCount.string(b.bytesOut))"))
