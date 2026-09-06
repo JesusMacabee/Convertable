@@ -41,6 +41,7 @@ let package = Package(
             name: "convertctl",
             dependencies: [
                 "ConvertableCore",
+                "ConvertableWeb",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),
@@ -53,6 +54,14 @@ let package = Package(
             name: "ConvertableCoreTests",
             dependencies: ["ConvertableCore"],
             resources: [.copy("Resources")]
+        ),
+        .testTarget(
+            name: "ConvertableWebTests",
+            dependencies: [
+                "ConvertableWeb",
+                "ConvertableCore",
+                .product(name: "HummingbirdTesting", package: "hummingbird"),
+            ]
         ),
     ]
 )

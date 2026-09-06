@@ -1,7 +1,8 @@
 import Foundation
 
 /// Typed access to the state database. One instance per Database; callers serialize.
-public final class Store {
+/// Thread-safe: every Database call takes the connection lock.
+public final class Store: @unchecked Sendable {
     public let db: Database
 
     public init(db: Database) throws {
@@ -19,8 +20,8 @@ public final class Store {
     // MARK: Scans
 
     public func beginScan(_ kind: ScanKind, now: Double = Date().timeIntervalSince1970) throws -> ScanRecord {
-        try db.run("INSERT INTO scans (kind, started_at) VALUES (?, ?)", [.text(kind.rawValue), .real(now)])
-        return ScanRecord(id: db.lastInsertRowID, kind: kind, startedAt: now, finishedAt: nil, dirsSeen: 0, filesSeen: 0, checkpoint: nil)
+        let id = try db.insert("INSERT INTO scans (kind, started_at) VALUES (?, ?)", [.text(kind.rawValue), .real(now)])
+        return ScanRecord(id: id, kind: kind, startedAt: now, finishedAt: nil, dirsSeen: 0, filesSeen: 0, checkpoint: nil)
     }
 
     /// The most recent full scan that never finished — a resumable one.
@@ -125,6 +126,16 @@ public final class Store {
             params.append(.text(Store.likePrefix(prefix) + "/%"))
         }
         return try db.run(sql, params)
+    }
+
+    /// Files seen only once so far — an incremental scan re-stats these individually so they can settle
+    /// (or be caught still growing) without waiting for the next full scan.
+    public func filesAwaitingConfirmation(limit: Int = 5000) throws -> [SourceFile] {
+        try db.query("SELECT * FROM source_files WHERE status='active' AND observations < 2 ORDER BY id LIMIT ?", [.integer(Int64(limit))], Store.sourceFile)
+    }
+
+    public func markFileMissing(relPath: String, now: Double) throws {
+        try db.run("UPDATE source_files SET status='missing', missing_since=COALESCE(missing_since, ?) WHERE rel_path=? AND status='active'", [.real(now), .text(relPath)])
     }
 
     public func sourceFile(relPath: String) throws -> SourceFile? {

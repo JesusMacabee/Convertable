@@ -86,6 +86,22 @@ final class ScannerTests: XCTestCase {
         XCTAssertEqual(try store.counts().directories, 8) // + A/E, N, N/M
     }
 
+    func testIncrementalScanConfirmsSettleForUntouchedFilesAndCatchesGrowth() throws {
+        try write("A/B/01.flac"); try write("A/B/02.flac", bytes: 100)
+        try scanner().fullScan()
+        XCTAssertEqual(try store.sourceFile(relPath: "A/B/01.flac")!.observations, 1)
+        // 02 keeps growing (a slow copy); 01 is done. Directory mtime does not change for either.
+        try write("A/B/02.flac", bytes: 900)
+        now += 600
+        try scanner().incrementalScan()
+        XCTAssertEqual(try store.sourceFile(relPath: "A/B/01.flac")!.observations, 2, "untouched file confirmed without a full scan")
+        let growing = try store.sourceFile(relPath: "A/B/02.flac")!
+        XCTAssertEqual(growing.observations, 1, "a growing file is not confirmed"); XCTAssertEqual(growing.size, 900)
+        now += 600
+        try scanner().incrementalScan()
+        XCTAssertEqual(try store.sourceFile(relPath: "A/B/02.flac")!.observations, 2)
+    }
+
     func testFullScanResumesFromCheckpoint() throws {
         for a in ["A", "B", "C", "D"] { try write("\(a)/X/01.flac") }
         let s = scanner()

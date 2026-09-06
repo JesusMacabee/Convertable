@@ -1,12 +1,13 @@
 import Foundation
 import ArgumentParser
 import ConvertableCore
+import ConvertableWeb
 
 @main
 struct Convertctl: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Convertable command line — diagnostics and scripting over the same core as the app.",
-        subcommands: [Doctor.self, Config.self, Tags.self, Scan.self, PlanCommand.self, Artists.self, Status.self, Pin.self, Run.self],
+        subcommands: [Doctor.self, Config.self, Tags.self, Scan.self, PlanCommand.self, Artists.self, Status.self, Pin.self, Run.self, Serve.self, WebURL.self],
         defaultSubcommand: Doctor.self)
 }
 
@@ -269,5 +270,32 @@ struct Run: AsyncParsableCommand {
                      batchID, summary.endedBy, summary.tracksDone, summary.tracksFailed, ByteCount.string(summary.bytesIn), ByteCount.string(summary.bytesOut),
                      summary.seconds, await shareIO.peakInFlight, await shareIO.limit))
         if summary.tracksFailed > 0 { throw ExitCode(2) }
+    }
+}
+
+
+// MARK: - Phase 3: serve
+
+struct Serve: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Run the controller (scheduler + batches) and the web dashboard in the foreground.")
+    @Flag(name: .long, help: "Do not start periodic scanning / auto-continue.") var noScheduler = false
+
+    func run() async throws {
+        let settings = try Settings.load()
+        let store = try openStore()
+        let controller = AppController(settings: settings, store: store)
+        await controller.startScheduler(scans: !noScheduler)
+        let server = WebServer(controller: controller, settings: settings)
+        print("Convertable dashboard: \(server.localURL)")
+        if settings.web.allowLAN { print("LAN access is ON — same token, any interface, port \(settings.web.port)") }
+        try await server.run()
+    }
+}
+
+struct WebURL: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "web-url", abstract: "Print the dashboard address including the access token.")
+    func run() throws {
+        let s = try Settings.load()
+        print("http://127.0.0.1:\(s.web.port)/?token=\(s.web.token)")
     }
 }

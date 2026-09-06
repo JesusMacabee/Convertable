@@ -53,6 +53,8 @@ public final class Database {
 
     private let handle: OpaquePointer
     public let path: String
+    /// Serializes every call. Recursive so `transaction` bodies can call back in.
+    private let lock = NSRecursiveLock()
 
     public init(path: String) throws {
         var h: OpaquePointer?
@@ -77,6 +79,7 @@ public final class Database {
     private var errorMessage: String { String(cString: sqlite3_errmsg(handle)) }
 
     public func exec(_ sql: String) throws {
+        lock.lock(); defer { lock.unlock() }
         guard sqlite3_exec(handle, sql, nil, nil, nil) == SQLITE_OK else {
             throw Failure.exec(sql: sql, message: errorMessage)
         }
@@ -85,6 +88,7 @@ public final class Database {
     /// Runs a statement that returns no rows.
     @discardableResult
     public func run(_ sql: String, _ params: [Value] = []) throws -> Int {
+        lock.lock(); defer { lock.unlock() }
         let stmt = try prepare(sql, params)
         defer { sqlite3_finalize(stmt) }
         let rc = sqlite3_step(stmt)
@@ -93,6 +97,7 @@ public final class Database {
     }
 
     public func query<T>(_ sql: String, _ params: [Value] = [], _ map: (Row) throws -> T) throws -> [T] {
+        lock.lock(); defer { lock.unlock() }
         let stmt = try prepare(sql, params)
         defer { sqlite3_finalize(stmt) }
         var columns: [String: Int32] = [:]
@@ -121,9 +126,18 @@ public final class Database {
         }.first
     }
 
-    public var lastInsertRowID: Int64 { sqlite3_last_insert_rowid(handle) }
+    public var lastInsertRowID: Int64 { lock.lock(); defer { lock.unlock() }; return sqlite3_last_insert_rowid(handle) }
+
+    /// Insert and return the new row id atomically with respect to other threads.
+    @discardableResult
+    public func insert(_ sql: String, _ params: [Value] = []) throws -> Int64 {
+        lock.lock(); defer { lock.unlock() }
+        try run(sql, params)
+        return sqlite3_last_insert_rowid(handle)
+    }
 
     public func transaction<T>(_ body: () throws -> T) throws -> T {
+        lock.lock(); defer { lock.unlock() }
         try exec("BEGIN IMMEDIATE")
         do {
             let result = try body()

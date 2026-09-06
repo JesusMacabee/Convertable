@@ -1,6 +1,6 @@
 # Convertable — Design & Build Plan
 
-*Status: awaiting sign-off before any code. Last updated 2026-09-05.*
+*Status: Phases 0–3 built (scaffold, scanner/planner, pipeline, web dashboard). Last updated 2026-09-05.*
 
 ## 1. Purpose
 
@@ -298,7 +298,9 @@ Served by the app itself; opens at `http://<mac>.local:<port>/` from the popover
 - **Settings** — paths (with live validation), library identity, selection defaults, auto-continue + schedule window, encoder/share concurrency, art size, quarantine retention, notifications, web access (port, LAN on/off, token regenerate, QR code for phones), launch at login.
 - Live updates over Server-Sent Events; no page reloads while a batch runs.
 
-**Implementation**: Hummingbird HTTP server inside the app process; JSON API mirroring `ConvertableCore/API`; a single-page dashboard in plain HTML/CSS/JS embedded as a bundle resource (no Node toolchain to maintain). Mobile-friendly layout.
+**Implementation**: Hummingbird HTTP server inside the app process; JSON API mirroring `ConvertableCore/API` (`AppController` actor + `EventBus`); a single-page dashboard in plain HTML/CSS/JS embedded as a bundle resource (no Node toolchain to maintain). Mobile-friendly layout. Until the menu bar app exists, `convertctl serve` runs controller + server in the foreground and `convertctl web-url` prints the tokenized link. *Built in Phase 3; the Review page arrives with Phase 6.*
+
+**Scheduler facts (Phase 3)**: the controller ticks every 30 s — volume probe (off the actor's executor; a single slow probe is re-checked before anything is alarmed), incremental scan when due, daily full scan at the configured hour, and auto-continue when allowed. `status()` never blocks on the share. Incremental scans also re-stat files seen only once so they can settle without a full scan.
 
 **Security**: binds to localhost by default; LAN exposure is an explicit toggle. Every request carries a random access token (cookie set by a one-time link/QR from Settings; also usable as a bearer header for scripts). No TLS on the LAN by default — the token is the only thing protecting it, so the token is long, rotated on demand, and the server never accepts requests from outside RFC-1918/link-local ranges. Any destructive action (approve removals, stop batch) requires the token *and* a same-origin check.
 

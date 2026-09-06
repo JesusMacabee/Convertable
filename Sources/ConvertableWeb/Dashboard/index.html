@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convertable</title>
+<style>
+:root {
+  --bg: #f6f6f7; --panel: #ffffff; --ink: #1d1d1f; --muted: #6e6e73; --line: #e3e3e6;
+  --accent: #0a84ff; --accent-ink: #fff; --ok: #2f9e44; --warn: #d9822b; --err: #d64545; --pin: #e0a800;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #161618; --panel: #1f1f22; --ink: #f2f2f4; --muted: #9a9aa2; --line: #2e2e33; --accent: #3b9cff; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+a { color: var(--accent); text-decoration: none; }
+button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.danger { color: var(--err); }
+button:disabled { opacity: .45; cursor: default; }
+input, select { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+input[type=checkbox] { width: 15px; height: 15px; }
+code, .mono { font-family: var(--mono); font-size: 12.5px; }
+
+header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+header h1 { font-size: 17px; margin: 0; letter-spacing: -.01em; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--bg); border: 1px solid var(--line); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot.idle { background: var(--muted); } .dot.scanning, .dot.converting { background: var(--accent); animation: pulse 1.2s infinite; }
+.dot.batchComplete { background: var(--ok); } .dot.paused { background: var(--warn); } .dot.attention, .dot.volumeUnavailable { background: var(--err); }
+@keyframes pulse { 50% { opacity: .35; } }
+header .spacer { flex: 1; }
+header .ind { color: var(--muted); font-size: 12.5px; }
+header .ind b { color: var(--ink); font-weight: 600; }
+
+nav { display: flex; gap: 4px; padding: 10px 20px 0; }
+nav button { border: none; background: transparent; padding: 8px 12px; border-radius: 8px 8px 0 0; color: var(--muted); font-weight: 600; }
+nav button.active { color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-bottom-color: var(--panel); margin-bottom: -1px; }
+main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+section[hidden] { display: none; }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.card h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.big { font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+.sub { color: var(--muted); font-size: 12.5px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.bar { height: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 8px 0; }
+.bar > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+.alert { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); margin-bottom: 8px; background: var(--panel); }
+.alert.error { border-color: var(--err); } .alert.warn { border-color: var(--warn); }
+.alert .x { margin-left: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; cursor: pointer; user-select: none; white-space: nowrap; }
+th.active { color: var(--ink); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.album td { background: color-mix(in srgb, var(--panel) 85%, var(--bg)); font-size: 13px; }
+tr.album td:first-child { padding-left: 42px; }
+.star { cursor: pointer; color: var(--line); font-size: 16px; line-height: 1; }
+.star.on { color: var(--pin); }
+.status-none { color: var(--muted); } .status-partial { color: var(--warn); } .status-complete { color: var(--ok); }
+.toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: none; border-radius: 0; padding: 6px 12px; }
+.seg button.active { background: var(--accent); color: var(--accent-ink); }
+.summary { position: sticky; bottom: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; margin-top: 14px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; box-shadow: 0 -6px 24px rgba(0,0,0,.06); }
+.summary .spacer { flex: 1; }
+.preview { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+.preview ul { margin: 6px 0; padding-left: 18px; max-height: 260px; overflow: auto; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); }
+.log { font-family: var(--mono); font-size: 12px; }
+.log .info { color: var(--ink); } .log .warn { color: var(--warn); } .log .error { color: var(--err); } .log .debug { color: var(--muted); }
+.log .t { color: var(--muted); }
+form.settings label { display: grid; grid-template-columns: 220px 1fr; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 12px; margin-top: -4px; }
+.hint { color: var(--muted); font-size: 12.5px; }
+.empty { color: var(--muted); padding: 24px; text-align: center; }
+@media (max-width: 700px) { form.settings label { grid-template-columns: 1fr; } header .ind { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Convertable</h1>
+  <span class="pill"><i class="dot" id="stateDot"></i><span id="stateText">connecting…</span></span>
+  <span class="spacer"></span>
+  <span class="ind" id="volInd"></span>
+  <span class="ind" id="libInd"></span>
+</header>
+<nav>
+  <button data-page="overview" class="active">Overview</button>
+  <button data-page="convert">Convert</button>
+  <button data-page="batches">Batches</button>
+  <button data-page="activity">Activity</button>
+  <button data-page="settings">Settings</button>
+</nav>
+<main>
+
+<section id="page-overview">
+  <div id="alerts"></div>
+  <div class="grid">
+    <div class="card"><h3>Library</h3><div class="big" id="libTracks">—</div><div class="sub" id="libDetail"></div></div>
+    <div class="card"><h3>Backlog</h3><div class="big" id="backlog">—</div><div class="sub" id="backlogDetail"></div></div>
+    <div class="card"><h3>Mirrored</h3><div class="big" id="mirrored">—</div><div class="sub" id="mirroredDetail"></div></div>
+    <div class="card"><h3>Scans</h3><div class="big" id="scanState">—</div><div class="sub" id="scanDetail"></div></div>
+  </div>
+  <div class="card" style="margin-top:14px" id="batchCard">
+    <h3>Current batch</h3>
+    <div id="batchBody"><div class="empty">No batch running.</div></div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnScan">Scan now</button>
+      <button id="btnStop" class="danger" disabled>Stop after current tracks</button>
+      <button id="btnNext" class="primary" disabled>Start next batch</button>
+      <span class="hint" id="nextHint"></span>
+    </div>
+  </div>
+  <div class="card" style="margin-top:14px"><h3>Recent activity</h3><div class="log" id="recent"></div></div>
+</section>
+
+<section id="page-convert" hidden>
+  <div class="toolbar">
+    <div class="seg" id="modeSeg">
+      <button data-mode="artists" class="active">By artist</button>
+      <button data-mode="size">By size</button>
+      <button data-mode="everything">Everything</button>
+    </div>
+    <input id="search" placeholder="Search artists…" style="min-width:220px">
+    <span class="spacer" style="flex:1"></span>
+    <label class="row">Cap
+      <select id="capPreset">
+        <option value="">none</option><option value="25">25 GB</option><option value="50">50 GB</option><option value="100">100 GB</option><option value="250">250 GB</option><option value="custom">custom…</option>
+      </select>
+      <input id="capCustom" type="number" min="1" step="1" placeholder="GB" style="width:90px" hidden>
+    </label>
+  </div>
+  <p class="hint" id="modeHint"></p>
+  <div class="card" style="padding:0;overflow:auto">
+    <table id="artistTable">
+      <thead><tr>
+        <th style="width:34px"></th><th style="width:26px"></th>
+        <th data-sort="name" class="active">Artist</th><th data-sort="albums" class="num">Albums</th><th data-sort="tracks" class="num">Tracks</th><th data-sort="bytes" class="num">Size</th><th data-sort="status">Mirror</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="summary">
+    <div id="selSummary" class="sub">Nothing selected</div>
+    <span class="spacer"></span>
+    <button id="btnClear">Clear</button>
+    <button id="btnPreview" class="primary">Preview batch</button>
+  </div>
+  <div class="card preview" id="previewCard" hidden></div>
+</section>
+
+<section id="page-batches" hidden>
+  <div class="card" style="padding:0;overflow:auto">
+    <table><thead><tr><th>#</th><th>Selection</th><th>Started</th><th>Duration</th><th class="num">Tracks</th><th class="num">In</th><th class="num">Out</th><th>Ended</th></tr></thead>
+    <tbody id="batchRows"></tbody></table>
+  </div>
+</section>
+
+<section id="page-activity" hidden>
+  <div class="toolbar">
+    <div class="seg" id="levelSeg"><button data-level="all" class="active">All</button><button data-level="info">Info</button><button data-level="warn">Warnings</button><button data-level="error">Errors</button></div>
+    <input id="actSearch" placeholder="Search messages and paths…" style="min-width:260px">
+    <button id="actRefresh">Refresh</button>
+  </div>
+  <div class="card log" id="actLog"></div>
+</section>
+
+<section id="page-settings" hidden>
+  <form class="settings card" id="settingsForm">
+    <label>Source root <input name="sourceRoot"><span class="help">The lossless library the app watches.</span></label>
+    <label>Mirror root <input name="mirrorRoot"><span class="help">Where converted files go. Kept beside — never inside — Music's own media folder.</span></label>
+    <label>Music library bundle <input name="musicLibraryPath"><span class="help">The .musiclibrary the iPod is paired to.</span></label>
+    <label>Import method <select name="importMethod"><option value="appleScript">Reference in place via AppleScript</option><option value="autoAddFolder">Hand off to "Automatically Add to Music"</option></select></label>
+    <label>Profile <select name="profileID"></select></label>
+    <label>Default batch budget (GB) <input name="batchBudgetGB" type="number" min="0" step="1"><span class="help">Source bytes per size-mode batch. 0 = unlimited.</span></label>
+    <label>Auto-continue <select name="autoContinueMode"><option value="off">Off — wait for me</option><option value="on">On — keep going</option><option value="window">Only in a time window</option></select></label>
+    <label>Window (hours, 0–23) <span class="row"><input name="windowStart" type="number" min="0" max="23" style="width:80px"> to <input name="windowEnd" type="number" min="0" max="23" style="width:80px"></span></label>
+    <label>Incremental scan every (min) <input name="incrementalScanMinutes" type="number" min="1"></label>
+    <label>Full scan at hour <input name="fullScanHour" type="number" min="0" max="23"></label>
+    <label>File settle (s) <input name="fileSettleSeconds" type="number" min="0"></label>
+    <label>Album settle (s) <input name="albumSettleSeconds" type="number" min="0"></label>
+    <label>Encode concurrency <input name="encodeConcurrency" type="number" min="1" max="64"></label>
+    <label>Share concurrency override <input name="shareConcurrencyOverride" type="number" min="1" max="16" placeholder="auto"><span class="help">Blank = derived from the mount protocol and adapted at runtime.</span></label>
+    <label>Art max pixels <input name="artMaxPixels" type="number" min="100" max="3000"></label>
+    <label>Quarantine retention (days) <input name="quarantineRetentionDays" type="number" min="1"></label>
+    <label>Web port <input name="webPort" type="number" min="1024" max="65535"></label>
+    <label>Allow LAN access <input name="allowLAN" type="checkbox" style="justify-self:start"><span class="help">Off: dashboard reachable from this Mac only. On: any device on your network with the link below. Takes effect on restart.</span></label>
+    <label>Access link <code id="accessLink" style="word-break:break-all"></code></label>
+    <div class="row" style="padding-top:12px"><button type="submit" class="primary">Save settings</button><span class="hint" id="settingsMsg"></span></div>
+  </form>
+</section>
+</main>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const GB = 1e9;
+const fmtBytes = b => b == null ? '—' : b >= 1e12 ? (b / 1e12).toFixed(2) + ' TB' : b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : b >= 1e6 ? (b / 1e6).toFixed(0) + ' MB' : (b / 1e3).toFixed(0) + ' KB';
+const fmtTime = t => t ? new Date(t * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—';
+const ago = t => { if (!t) return '—'; const s = Date.now() / 1000 - t; return s < 90 ? 'just now' : s < 5400 ? Math.round(s / 60) + ' min ago' : s < 172800 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' d ago'; };
+const fmtDur = s => s < 90 ? Math.round(s) + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : (s / 3600).toFixed(1) + ' h';
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const api = async (path, opts = {}) => {
+  const r = await fetch('/api' + path, { headers: { 'Content-Type': 'application/json', 'X-Convertable': '1' }, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  if (!r.ok) throw new Error(path + ' → ' + r.status + ' ' + (await r.text()));
+  return r.json();
+};
+
+// ---- navigation
+$$('nav button').forEach(b => b.onclick = () => showPage(b.dataset.page));
+function showPage(p) {
+  $$('nav button').forEach(b => b.classList.toggle('active', b.dataset.page === p));
+  $$('main section').forEach(s => s.hidden = s.id !== 'page-' + p);
+  if (p === 'convert' && !artists.length) loadArtists();
+  if (p === 'batches') loadBatches();
+  if (p === 'activity') loadActivity();
+  if (p === 'settings') loadSettings();
+  try { localStorage.setItem('page', p); } catch {}
+}
+
+// ---- status / SSE
+let status = null;
+function renderStatus(s) {
+  status = s;
+  const labels = { idle: 'Idle', scanning: 'Scanning', converting: 'Converting', paused: 'Paused', batchComplete: 'Batch complete', attention: 'Needs attention', volumeUnavailable: 'Volume unavailable' };
+  $('#stateDot').className = 'dot ' + s.state;
+  $('#stateText').textContent = labels[s.state] || s.state;
+  $('#volInd').innerHTML = (s.volumeAvailable ? '● ' : '○ ') + '<b>' + esc(s.volume) + '</b>';
+  $('#libInd').innerHTML = s.musicLibraryOpen ? '● Music: <b>iPod library open</b>' : (s.musicRunning ? '○ Music: <b>other library open</b>' : '○ Music: <b>not running</b>');
+  const L = s.library;
+  $('#libTracks').textContent = L.tracks.toLocaleString() + ' tracks';
+  $('#libDetail').textContent = `${L.artists} artists · ${L.albums} albums · ${fmtBytes(L.bytes)} · ${L.lossless.toLocaleString()} lossless / ${L.lossy.toLocaleString()} lossy` + (L.missing ? ` · ${L.missing} missing` : '');
+  $('#backlog').textContent = L.backlogAlbums + ' albums';
+  $('#backlogDetail').textContent = fmtBytes(L.backlogBytes) + ' of source to convert' + (L.settlingAlbums ? ` · ${L.settlingAlbums} still settling` : '');
+  $('#mirrored').textContent = L.mirrored.toLocaleString() + ' tracks';
+  $('#mirroredDetail').textContent = L.tracks ? Math.round(100 * L.mirrored / L.tracks) + '% of library' : '';
+  $('#scanState').textContent = s.scanInProgress ? 'Scanning…' : (s.lastIncrementalScan || s.lastFullScan ? ago(Math.max(s.lastIncrementalScan || 0, s.lastFullScan || 0)) : 'never');
+  $('#scanDetail').textContent = s.scanInProgress ? s.scanInProgress : `full ${ago(s.lastFullScan)} · next check ${s.nextScan ? fmtTime(s.nextScan) : '—'}`;
+  $('#alerts').innerHTML = s.alerts.map(a => `<div class="alert ${a.level}"><span>${esc(a.message)}</span><button class="x" data-dismiss="${esc(a.id)}">Dismiss</button></div>`).join('');
+  $$('#alerts [data-dismiss]').forEach(b => b.onclick = () => api('/alerts/dismiss', { method: 'POST', body: { id: b.dataset.dismiss } }).then(renderStatus));
+  renderBatch(s.batch);
+  $('#btnStop').disabled = !s.batch;
+  $('#btnNext').disabled = !!s.batch || !s.volumeAvailable || L.backlogAlbums === 0;
+  $('#nextHint').textContent = s.batch ? '' : (L.backlogAlbums ? `Size mode, default budget — or pick artists on the Convert tab.` : 'Nothing eligible right now.');
+  $('#btnScan').disabled = !!s.scanInProgress || !s.volumeAvailable;
+}
+function renderBatch(b) {
+  const el = $('#batchBody');
+  if (!b) { el.innerHTML = '<div class="empty">No batch running.</div>'; return; }
+  const pct = b.bytesInTotal ? Math.min(100, 100 * b.bytesInDone / b.bytesInTotal) : 0;
+  const elapsed = Date.now() / 1000 - b.startedAt;
+  const rate = elapsed > 5 ? b.bytesInDone / elapsed : 0;
+  const eta = rate > 0 ? fmtDur((b.bytesInTotal - b.bytesInDone) / rate) : '…';
+  el.innerHTML = `
+    <div class="row"><b>#${b.id}</b> <span class="sub">${esc(b.selection)}</span></div>
+    <div class="bar"><i style="width:${pct}%"></i></div>
+    <div class="row sub"><span>${b.albumsDone}/${b.albumsTotal} albums · ${b.tracksDone}/${b.tracksTotal} tracks${b.tracksFailed ? ` · <span style="color:var(--err)">${b.tracksFailed} failed</span>` : ''}</span>
+      <span>${fmtBytes(b.bytesInDone)} of ${fmtBytes(b.bytesInTotal)} in → ${fmtBytes(b.bytesOut)} out</span><span>ETA ${eta}</span></div>
+    ${b.currentAlbum ? `<div style="margin-top:6px"><b>${esc(b.currentAlbum)}</b><div class="chips">${b.currentTracks.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div></div>` : ''}
+    ${b.backlogAlbums ? `<div class="sub" style="margin-top:6px">After this batch: ${b.backlogAlbums} albums / ${fmtBytes(b.backlogBytes)} remain.</div>` : ''}`;
+}
+const recent = [];
+function pushActivity(a) {
+  recent.unshift(a); if (recent.length > 40) recent.pop();
+  $('#recent').innerHTML = recent.map(a => `<div class="${a.level}"><span class="t">${new Date(a.at * 1000).toLocaleTimeString()}</span> ${esc(a.message)}${a.relPath ? ` <span class="t">— ${esc(a.relPath)}</span>` : ''}</div>`).join('') || '<div class="empty">Nothing yet.</div>';
+}
+function connect() {
+  const es = new EventSource('/events');
+  window.__sse = { messages: 0, last: null, source: es };
+  es.onmessage = e => {
+    window.__sse.messages++; window.__sse.last = Date.now();
+    const ev = JSON.parse(e.data);
+    if (ev.status) renderStatus(ev.status._0 ?? ev.status);
+    else if (ev.batchProgress) renderBatch(ev.batchProgress._0 ?? ev.batchProgress);
+    else if (ev.activity) pushActivity(ev.activity._0 ?? ev.activity);
+    else if (ev.scanProgress) { const p = ev.scanProgress; $('#scanState').textContent = 'Scanning…'; $('#scanDetail').textContent = `${p.files.toLocaleString()} files · ${p.artist}`; }
+  };
+  es.onerror = () => { es.close(); $('#stateText').textContent = 'reconnecting…'; setTimeout(connect, 3000); };
+}
+$('#btnScan').onclick = () => api('/scan', { method: 'POST', body: { full: false } }).then(renderStatus);
+$('#btnStop').onclick = () => api('/stop', { method: 'POST' }).then(renderStatus);
+$('#btnNext').onclick = () => api('/batch', { method: 'POST', body: { selection: { mode: { size: {} }, cap: settingsCache?.batchBudgetBytes ?? null, ignoreSettle: false }, exceedCap: false } }).then(renderStatus);
+
+// ---- convert picker
+let artists = [], albumsCache = {}, expanded = new Set(), selArtists = new Set(), selAlbums = new Set(), mode = 'artists', sortKey = 'name', sortDir = 1;
+async function loadArtists() { artists = await api('/artists'); renderArtists(); }
+function capBytes() {
+  const v = $('#capPreset').value;
+  if (v === '') return null;
+  if (v === 'custom') { const n = parseFloat($('#capCustom').value); return n > 0 ? Math.round(n * GB) : null; }
+  return parseInt(v) * GB;
+}
+$('#capPreset').onchange = () => { $('#capCustom').hidden = $('#capPreset').value !== 'custom'; updateSummary(); };
+$('#capCustom').oninput = updateSummary;
+$$('#modeSeg button').forEach(b => b.onclick = () => { mode = b.dataset.mode; $$('#modeSeg button').forEach(x => x.classList.toggle('active', x === b)); renderArtists(); updateSummary(); });
+$('#search').oninput = renderArtists;
+$$('#artistTable th[data-sort]').forEach(th => th.onclick = () => { if (sortKey === th.dataset.sort) sortDir = -sortDir; else { sortKey = th.dataset.sort; sortDir = th.dataset.sort === 'name' ? 1 : -1; } $$('#artistTable th').forEach(x => x.classList.toggle('active', x === th)); renderArtists(); });
+function renderArtists() {
+  const q = $('#search').value.trim().toLowerCase();
+  const hints = { artists: 'Tick artists (or expand one and tick albums). Pinned ★ artists are always queued first. A cap is optional and soft — you can exceed it.', size: 'Oldest eligible albums first, up to the cap. Albums are never split across a batch.', everything: 'The whole eligible backlog, oldest first; a cap turns it into "as much as fits".' };
+  $('#modeHint').textContent = hints[mode];
+  const rows = artists.filter(a => !q || a.name.toLowerCase().includes(q) || a.dir.toLowerCase().includes(q))
+    .sort((a, b) => { const k = sortKey; const va = a[k], vb = b[k]; return (typeof va === 'string' ? va.localeCompare(vb, undefined, { sensitivity: 'base' }) : va - vb) * sortDir; });
+  const tb = $('#artistTable tbody');
+  tb.innerHTML = rows.map(a => {
+    const dis = mode !== 'artists' ? 'disabled' : '';
+    const partialSel = !selArtists.has(a.dir) && [...selAlbums].some(k => k.startsWith(a.dir + ' '));
+    return `<tr data-dir="${esc(a.dir)}">
+      <td><input type="checkbox" ${dis} ${selArtists.has(a.dir) ? 'checked' : ''} ${partialSel ? 'data-partial=1' : ''} data-art="${esc(a.dir)}"></td>
+      <td><span class="star ${a.pinned ? 'on' : ''}" data-pin="${esc(a.dir)}" title="Pin: always queue first">★</span></td>
+      <td><a href="#" data-expand="${esc(a.dir)}">${expanded.has(a.dir) ? '▾' : '▸'} ${esc(a.name)}</a>${a.name !== a.dir ? ` <span class="sub">${esc(a.dir)}</span>` : ''}</td>
+      <td class="num">${a.albums}</td><td class="num">${a.tracks}</td><td class="num">${fmtBytes(a.bytes)}</td>
+      <td class="status-${a.status}">${a.status === 'none' ? '—' : a.status === 'complete' ? '✓ complete' : `${a.mirrored}/${a.tracks}`}</td></tr>` +
+      (expanded.has(a.dir) ? (albumsCache[a.dir] || []).map(al => { const key = a.dir + ' ' + al.albumDir; return `<tr class="album" data-dir="${esc(a.dir)}">
+        <td><input type="checkbox" ${dis} ${selAlbums.has(key) || selArtists.has(a.dir) ? 'checked' : ''} ${selArtists.has(a.dir) ? 'disabled' : ''} data-alb="${esc(a.dir)}" data-albdir="${esc(al.albumDir)}"></td><td></td>
+        <td>${esc(al.name)} <span class="sub">${al.lossless ? al.lossless + ' lossless' : ''}${al.lossy ? (al.lossless ? ' · ' : '') + al.lossy + ' copy-through' : ''}</span></td>
+        <td></td><td class="num">${al.tracks}</td><td class="num">${fmtBytes(al.bytes)}</td>
+        <td class="status-${al.status}">${al.status === 'none' ? '—' : al.status === 'complete' ? '✓' : `${al.mirrored}/${al.tracks}`}</td></tr>`; }).join('') : '');
+  }).join('') || '<tr><td colspan="7" class="empty">No artists match.</td></tr>';
+  $$('input[data-partial]', tb).forEach(c => c.indeterminate = true);
+  $$('[data-expand]', tb).forEach(a => a.onclick = async e => { e.preventDefault(); const d = a.dataset.expand; if (expanded.has(d)) expanded.delete(d); else { expanded.add(d); if (!albumsCache[d]) albumsCache[d] = await api('/albums?artist=' + encodeURIComponent(d)); } renderArtists(); });
+  $$('[data-pin]', tb).forEach(s => s.onclick = async () => { const a = artists.find(x => x.dir === s.dataset.pin); artists = await api('/pin', { method: 'POST', body: { artistDir: a.dir, pinned: !a.pinned } }); renderArtists(); });
+  $$('input[data-art]', tb).forEach(c => c.onchange = () => { if (c.checked) { selArtists.add(c.dataset.art); [...selAlbums].filter(k => k.startsWith(c.dataset.art + ' ')).forEach(k => selAlbums.delete(k)); } else selArtists.delete(c.dataset.art); renderArtists(); updateSummary(); });
+  $$('input[data-alb]', tb).forEach(c => c.onchange = () => { const key = c.dataset.alb + ' ' + c.dataset.albdir; if (c.checked) selAlbums.add(key); else selAlbums.delete(key); renderArtists(); updateSummary(); });
+}
+function currentSelection() {
+  const cap = capBytes();
+  if (mode === 'size') return { mode: { size: {} }, cap, ignoreSettle: false };
+  if (mode === 'everything') return { mode: { everything: {} }, cap, ignoreSettle: false };
+  if (selArtists.size && !selAlbums.size) return { mode: { artists: { _0: [...selArtists] } }, cap, ignoreSettle: false };
+  // Mixed or album-only selections become an album list.
+  const keys = [...selAlbums].map(k => { const [artistDir, albumDir] = k.split(' '); return { artistDir, albumDir }; });
+  for (const a of selArtists) for (const al of (albumsCache[a] || [])) keys.push({ artistDir: a, albumDir: al.albumDir });
+  return { mode: { albums: { _0: keys } }, cap, ignoreSettle: false };
+}
+function updateSummary() {
+  const cap = capBytes();
+  let text;
+  if (mode === 'size') text = cap ? `Oldest eligible albums up to ${fmtBytes(cap)}` : 'Oldest eligible albums, no cap — set one or use Everything';
+  else if (mode === 'everything') text = cap ? `Everything eligible, as much as fits in ${fmtBytes(cap)}` : 'Everything eligible';
+  else {
+    const bytes = [...selArtists].reduce((s, d) => s + (artists.find(a => a.dir === d)?.bytes || 0), 0) + [...selAlbums].reduce((s, k) => { const [d, al] = k.split(' '); return s + ((albumsCache[d] || []).find(x => x.albumDir === al)?.bytes || 0); }, 0);
+    const n = selArtists.size + selAlbums.size;
+    text = n ? `${selArtists.size ? selArtists.size + ' artist(s)' : ''}${selArtists.size && selAlbums.size ? ' + ' : ''}${selAlbums.size ? selAlbums.size + ' album(s)' : ''} · ${fmtBytes(bytes)} of source` + (cap && bytes > cap ? ` · exceeds ${fmtBytes(cap)} cap` : '') : 'Nothing selected';
+  }
+  $('#selSummary').textContent = text;
+  $('#btnPreview').disabled = mode === 'artists' && !selArtists.size && !selAlbums.size;
+}
+$('#btnClear').onclick = () => { selArtists.clear(); selAlbums.clear(); renderArtists(); updateSummary(); $('#previewCard').hidden = true; };
+$('#btnPreview').onclick = async () => {
+  const sel = currentSelection();
+  if (mode === 'artists') for (const a of selArtists) if (!albumsCache[a]) albumsCache[a] = await api('/albums?artist=' + encodeURIComponent(a));
+  const p = await api('/preview', { method: 'POST', body: mode === 'artists' ? currentSelection() : sel });
+  const li = a => `<li>${a.pinned ? '★ ' : ''}<b>${esc(a.artist)}</b> — ${esc(a.album)} <span class="sub">${a.tracks} tracks · ${fmtBytes(a.bytesIn)} → ~${fmtBytes(a.estimatedOut)}</span></li>`;
+  const card = $('#previewCard'); card.hidden = false;
+  card.innerHTML = `<h3>Batch preview</h3>
+    <div class="row"><span class="big">${p.albums.length} albums</span><span class="sub">${p.tracks} tracks · ${fmtBytes(p.bytesIn)} in → ~${fmtBytes(p.estimatedOut)} out · ~${fmtDur(p.estimatedSeconds)}</span></div>
+    <ul>${p.albums.map(li).join('') || '<li class="sub">Nothing eligible in this selection.</li>'}</ul>
+    ${p.overflow.length ? `<div class="alert warn"><span><b>${p.overflow.length} more albums (${fmtBytes(p.overflowBytes)}) are beyond the cap.</b> Convert all ${fmtBytes(p.bytesIn + p.overflowBytes)}, or respect the cap and stop after the list above.</span></div><ul>${p.overflow.map(li).join('')}</ul>` : ''}
+    ${p.backlogAlbums ? `<div class="sub">After this batch: ${p.backlogAlbums} albums / ${fmtBytes(p.backlogBytes)} remain in the backlog.</div>` : ''}
+    <div class="sub">Not included: ${p.settling} still settling · ${p.alreadyMirrored} already mirrored · ${p.skipped} skipped by profile.</div>
+    <div class="row" style="margin-top:10px">
+      ${p.overflow.length ? `<button class="primary" id="startAll">Convert all ${fmtBytes(p.bytesIn + p.overflowBytes)}</button><button id="startCap">Respect cap (${fmtBytes(p.bytesIn)})</button>` : `<button class="primary" id="startCap" ${p.albums.length ? '' : 'disabled'}>Start batch</button>`}
+    </div>`;
+  const start = exceed => async () => { await api('/batch', { method: 'POST', body: { selection: p.selection, exceedCap: exceed } }); showPage('overview'); };
+  $('#startCap').onclick = start(false);
+  if ($('#startAll')) $('#startAll').onclick = start(true);
+};
+
+// ---- batches
+async function loadBatches() {
+  const rows = await api('/batches');
+  $('#batchRows').innerHTML = rows.map(b => `<tr><td>${b.id}</td><td>${esc(b.selection)}</td><td>${fmtTime(b.startedAt)}</td><td>${b.finishedAt ? fmtDur(b.finishedAt - b.startedAt) : 'running'}</td><td class="num">${b.filesDone}</td><td class="num">${fmtBytes(b.bytesIn)}</td><td class="num">${fmtBytes(b.bytesOut)}</td><td>${esc(b.endedBy || '…')}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No batches yet.</td></tr>';
+}
+
+// ---- activity
+let actLevel = 'all';
+$$('#levelSeg button').forEach(b => b.onclick = () => { actLevel = b.dataset.level; $$('#levelSeg button').forEach(x => x.classList.toggle('active', x === b)); loadActivity(); });
+$('#actSearch').oninput = () => { clearTimeout(window._t); window._t = setTimeout(loadActivity, 250); };
+$('#actRefresh').onclick = loadActivity;
+async function loadActivity() {
+  const rows = await api(`/activity?level=${actLevel}&search=${encodeURIComponent($('#actSearch').value)}&limit=400`);
+  $('#actLog').innerHTML = rows.map(a => `<div class="${a.level}"><span class="t">${fmtTime(a.at)}</span> <span class="t">[${a.category}]</span> ${esc(a.message)}${a.relPath ? ` <span class="t">— ${esc(a.relPath)}</span>` : ''}</div>`).join('') || '<div class="empty">No activity matches.</div>';
+}
+
+// ---- settings
+let settingsCache = null;
+async function loadSettings() {
+  const [s, profiles] = await Promise.all([api('/settings'), api('/profiles')]);
+  settingsCache = s;
+  const f = $('#settingsForm');
+  f.profileID.innerHTML = profiles.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  for (const k of ['sourceRoot', 'mirrorRoot', 'musicLibraryPath', 'importMethod', 'profileID', 'incrementalScanMinutes', 'fullScanHour', 'fileSettleSeconds', 'albumSettleSeconds', 'encodeConcurrency', 'artMaxPixels', 'quarantineRetentionDays']) f[k].value = s[k];
+  f.shareConcurrencyOverride.value = s.shareConcurrencyOverride ?? '';
+  f.batchBudgetGB.value = s.batchBudgetBytes ? Math.round(s.batchBudgetBytes / GB) : 0;
+  const ac = s.autoContinue; f.autoContinueMode.value = typeof ac === 'string' ? ac : (ac.window ? 'window' : (ac.on !== undefined ? 'on' : 'off'));
+  if (ac.window) { f.windowStart.value = ac.window.startHour; f.windowEnd.value = ac.window.endHour; }
+  f.webPort.value = s.web.port; f.allowLAN.checked = s.web.allowLAN;
+  $('#accessLink').textContent = `http://${location.hostname}:${s.web.port}/?token=${s.web.token}`;
+}
+$('#settingsForm').onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target, s = structuredClone(settingsCache);
+  for (const k of ['sourceRoot', 'mirrorRoot', 'musicLibraryPath', 'importMethod', 'profileID']) s[k] = f[k].value;
+  for (const k of ['incrementalScanMinutes', 'fullScanHour', 'fileSettleSeconds', 'albumSettleSeconds', 'encodeConcurrency', 'artMaxPixels', 'quarantineRetentionDays']) s[k] = parseInt(f[k].value);
+  s.shareConcurrencyOverride = f.shareConcurrencyOverride.value ? parseInt(f.shareConcurrencyOverride.value) : null;
+  s.batchBudgetBytes = parseInt(f.batchBudgetGB.value) > 0 ? parseInt(f.batchBudgetGB.value) * GB : null;
+  s.autoContinue = f.autoContinueMode.value === 'window' ? { window: { startHour: parseInt(f.windowStart.value) || 0, endHour: parseInt(f.windowEnd.value) || 0 } } : { [f.autoContinueMode.value]: {} };
+  s.web.port = parseInt(f.webPort.value); s.web.allowLAN = f.allowLAN.checked;
+  try { settingsCache = await api('/settings', { method: 'PUT', body: s }); $('#settingsMsg').textContent = 'Saved.'; }
+  catch (err) { $('#settingsMsg').textContent = 'Not saved: ' + err.message; }
+};
+
+// ---- boot
+connect();
+api('/status').then(renderStatus).catch(() => {});   // don't depend on the SSE stream for the first paint
+api('/settings').then(s => settingsCache = s).catch(() => {});
+api('/activity?limit=25').then(rows => rows.reverse().forEach(pushActivity)).catch(() => {});
+let initial = 'overview'; try { initial = localStorage.getItem('page') || 'overview'; } catch {}
+showPage(initial);
+</script>
+</body>
+</html>
