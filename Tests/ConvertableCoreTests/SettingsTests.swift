@@ -35,3 +35,22 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(s.musicLibraryFileURLString, "file:///Volumes/PLeX/Music/AAC%20Music/Music%20Library.musiclibrary/")
     }
 }
+
+final class SetupProbeTests: XCTestCase {
+    func testMirrorInsideMusicMediaFolderIsRejected() {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("setup-\(UUID())").path
+        try? FileManager.default.createDirectory(atPath: tmp + "/Lib/Media.localized", withIntermediateDirectories: true)
+        let lib = tmp + "/Lib/Music Library.musiclibrary"
+        XCTAssertFalse(Setup.probeMirror(tmp + "/Lib/Media.localized/Music/Mirror", musicLibraryPath: lib).ok)
+        XCTAssertTrue(Setup.probeMirror(tmp + "/Lib/Lossless Mirror", musicLibraryPath: lib).ok)
+        XCTAssertFalse(Setup.probeMirror("/nonexistent/x/Mirror", musicLibraryPath: lib).ok)
+    }
+    func testDependenciesListRequiredEncoder() {
+        let d = Setup.dependencies()
+        XCTAssertTrue(d.first { $0.name.hasPrefix("afconvert") }!.present)
+        XCTAssertEqual(d.filter(\.required).count, 2)
+    }
+    func testSourceProbeOnMissingPath() {
+        XCTAssertFalse(Setup.probeSource("/Volumes/Nope/Music").ok)
+    }
+}

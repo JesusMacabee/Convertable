@@ -97,6 +97,7 @@ form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 
   <button data-page="review">Review <span id="reviewBadge" class="chip" hidden></span></button>
   <button data-page="activity">Activity</button>
   <button data-page="settings">Settings</button>
+  <button data-page="setup" id="navSetup" hidden>Setup</button>
 </nav>
 <main>
 
@@ -179,6 +180,15 @@ form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 
   <div class="card log" id="actLog"></div>
 </section>
 
+<section id="page-setup" hidden>
+  <div class="card" style="max-width:820px;margin:0 auto">
+    <div class="row" style="margin-bottom:10px"><h2 style="margin:0;font-size:18px">Set up Convertable</h2><span class="spacer" style="flex:1"></span><span class="sub" id="wizStep"></span></div>
+    <div class="bar"><i id="wizBar"></i></div>
+    <div id="wizBody" style="min-height:220px;margin-top:12px"></div>
+    <div class="row" style="margin-top:16px"><button id="wizBack">Back</button><span class="spacer" style="flex:1"></span><button id="wizSkip">Skip setup</button><button id="wizNext" class="primary">Next</button></div>
+  </div>
+</section>
+
 <section id="page-settings" hidden>
   <form class="settings card" id="settingsForm">
     <label>Source root <input name="sourceRoot"><span class="help">The lossless library the app watches.</span></label>
@@ -200,7 +210,7 @@ form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 
     <label>Web port <input name="webPort" type="number" min="1024" max="65535"></label>
     <label>Allow LAN access <input name="allowLAN" type="checkbox" style="justify-self:start"><span class="help">Off: dashboard reachable from this Mac only. On: any device on your network with the link below. Takes effect on restart.</span></label>
     <label>Access link <code id="accessLink" style="word-break:break-all"></code></label>
-    <div class="row" style="padding-top:12px"><button type="submit" class="primary">Save settings</button><span class="hint" id="settingsMsg"></span></div>
+    <div class="row" style="padding-top:12px"><button type="submit" class="primary">Save settings</button><span class="hint" id="settingsMsg"></span><span class="spacer" style="flex:1"></span><button type="button" id="btnRerunSetup">Run setup again…</button></div>
   </form>
 </section>
 </main>
@@ -230,6 +240,7 @@ function showPage(p) {
   if (p === 'review') loadProposals();
   if (p === 'activity') loadActivity();
   if (p === 'settings') loadSettings();
+  if (p === 'setup') wizard.open();
   try { localStorage.setItem('page', p); } catch {}
 }
 
@@ -445,13 +456,115 @@ $('#settingsForm').onsubmit = async e => {
   catch (err) { $('#settingsMsg').textContent = 'Not saved: ' + err.message; }
 };
 
+// ---- first-run setup wizard
+const wizard = (() => {
+  const steps = ['Dependencies', 'Source folder', 'Mirror folder', 'Music library', 'Music settings', 'Profile & batches', 'Legacy library', 'Access', 'Finish'];
+  let i = 0, draft = null, probes = {};
+  const body = () => $('#wizBody');
+  const field = (name, label, value, help = '', type = 'text') => `<label style="display:block;margin:10px 0"><div class="sub">${label}</div><input name="${name}" type="${type}" value="${esc(value ?? '')}" style="width:100%">${help ? `<div class="hint">${help}</div>` : ''}</label>`;
+  const result = (ok, text) => `<div class="alert ${ok ? '' : 'error'}" style="margin-top:10px">${ok ? '✓' : '✗'} ${esc(text)}</div>`;
+  const warn = list => list.map(w => `<div class="alert warn">${esc(w)}</div>`).join('');
+  async function open() {
+    if (!draft) { draft = structuredClone(settingsCache || await api('/settings')); if (!settingsCache) settingsCache = structuredClone(draft); }
+    i = 0; render();
+  }
+  function collect() { for (const inp of $$('input,select', body())) if (inp.name) { if (inp.type === 'checkbox') draft[inp.name] = inp.checked; else if (inp.type === 'number') draft[inp.name] = parseInt(inp.value); else draft[inp.name] = inp.value; } }
+  async function render() {
+    if (!draft) { draft = structuredClone(settingsCache || await api('/settings')); }
+    $('#wizStep').textContent = `Step ${i + 1} of ${steps.length} — ${steps[i]}`;
+    $('#wizBar').style.width = (100 * i / (steps.length - 1)) + '%';
+    $('#wizBack').disabled = i === 0; $('#wizNext').textContent = i === steps.length - 1 ? 'Finish' : 'Next'; $('#wizNext').disabled = false;
+    const b = body();
+    switch (i) {
+      case 0: {
+        b.innerHTML = '<p>Convertable uses Apple’s built-in AAC encoder plus a few Homebrew tools. Checking…</p>';
+        const deps = await api('/setup/dependencies');
+        b.innerHTML = `<p>Convertable uses Apple’s built-in encoder and, for tags, TagLib. MP3/FLAC outputs need extra tools.</p>` + deps.map(d => `<div class="alert ${d.present ? '' : (d.required ? 'error' : 'warn')}"><span><b>${esc(d.name)}</b> — ${esc(d.detail)}${d.fix ? ` · run <code>${esc(d.fix)}</code>` : ''}</span></div>`).join('');
+        $('#wizNext').disabled = deps.some(d => d.required && !d.present);
+        break; }
+      case 1: {
+        b.innerHTML = `<p>The lossless library Convertable watches. Usually a folder on your NAS laid out as <code>Artist/Album/tracks</code>.</p>` + field('sourceRoot', 'Source folder', draft.sourceRoot, 'e.g. /Volumes/NAS/Music/Lossless') + `<button id="probeSrc">Check folder</button><div id="srcOut"></div>`;
+        $('#probeSrc').onclick = async () => { collect(); $('#srcOut').innerHTML = '<div class="sub">Probing…</div>'; const p = await api('/setup/source', { method: 'POST', body: { path: draft.sourceRoot } }); probes.source = p;
+          $('#srcOut').innerHTML = result(p.ok, p.status) + (p.ok ? `<div class="sub">${p.topLevelFolders} top-level folders · ${p.sampleAudioFiles}${p.sampleAudioFiles >= 150 ? '+' : ''} audio files in the first folders · file access ${p.coldMs ? p.coldMs.toFixed(0) + ' ms cold / ' + p.warmMs.toFixed(0) + ' ms warm' : 'n/a'} · ${esc(p.protocolName || 'local')}</div>` : '') + warn(p.warnings); };
+        break; }
+      case 2: {
+        const home = draft.musicLibraryPath.replace(/\/[^/]*\.musiclibrary\/?$/, '');
+        b.innerHTML = `<p>Where converted files are written. Keep it <b>beside</b> the Music library, never inside Music’s media folder.</p>` + field('mirrorRoot', 'Mirror folder', draft.mirrorRoot || (home + '/Lossless Mirror')) + `<button id="probeMir">Check folder</button><div id="mirOut"></div>`;
+        $('#probeMir').onclick = async () => { collect(); const p = await api('/setup/mirror', { method: 'POST', body: { path: draft.mirrorRoot, musicLibraryPath: draft.musicLibraryPath } }); probes.mirror = p;
+          $('#mirOut').innerHTML = (p.errors.length ? p.errors.map(e => result(false, e)).join('') : result(true, `Writable · ${fmtBytes(p.freeBytes)} free`)) + warn(p.warnings); };
+        break; }
+      case 3: {
+        b.innerHTML = '<p>Loading libraries…</p>';
+        const L = await api('/setup/libraries');
+        b.innerHTML = `<p>Music can only have one library open at a time. Pick the one the iPod syncs with; imports wait whenever a different library is open. To switch libraries: quit Music, hold <b>Option</b> while launching it, choose the library.</p>
+          <div class="sub">Music is ${L.musicRunning ? 'running' : 'not running'}${L.openLibrary ? ' · open: ' + esc(L.openLibrary) : ''}</div>
+          ${L.libraries.map(l => `<label class="row" style="margin:8px 0"><input type="radio" name="lib" value="${esc(l.path)}" ${draft.musicLibraryPath === l.path ? 'checked' : ''}> <span>${esc(l.name)}${l.isOpen ? ' <span class="chip">open now</span>' : ''}<div class="hint">${esc(l.path)}</div></span></label>`).join('')}
+          ${field('musicLibraryPath', 'Or type the .musiclibrary path', draft.musicLibraryPath)}`;
+        $$('input[name=lib]', b).forEach(r => r.onchange = () => { $('input[name=musicLibraryPath]', b).value = r.value; });
+        break; }
+      case 4: {
+        b.innerHTML = `<p>Two Music settings matter and can’t be read by an app, so check them in the library you picked:</p>
+          <ol><li><b>Music ▸ Settings ▸ Files</b>: turn <b>off</b> “Copy files to Music Media folder when adding to library”. Otherwise Music duplicates every converted file.</li>
+          <li><b>Music ▸ Settings ▸ General</b>: keep <b>Sync Library</b> off for an iPod library.</li></ol>
+          <p>Then prove it: this adds a 2-second test tone to the open library, checks whether Music referenced or copied it, and removes it again.</p>
+          <button id="testImp">Test with one file</button><div id="impOut"></div><p class="hint">macOS will ask whether Convertable may control Music the first time — click Allow.</p>`;
+        $('#testImp').onclick = async () => { $('#impOut').innerHTML = '<div class="sub">Testing… (up to a minute)</div>'; const r = await api('/setup/test-import', { method: 'POST', body: { mirrorRoot: draft.mirrorRoot, musicLibraryPath: draft.musicLibraryPath } }); probes.import = r; $('#impOut').innerHTML = result(r.ok, r.message) + (r.detail ? `<div class="hint">${esc(r.detail)}</div>` : ''); };
+        break; }
+      case 5: {
+        const profiles = await api('/profiles');
+        b.innerHTML = `<p>What to produce, and how much to convert per batch.</p>
+          <label style="display:block;margin:10px 0"><div class="sub">Profile</div><select name="profileID" style="width:100%">${profiles.map(p => `<option value="${esc(p.id)}" ${p.id === draft.profileID ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
+          ${field('batchBudgetGB', 'Batch budget (GB of source, 0 = unlimited)', draft.batchBudgetBytes ? Math.round(draft.batchBudgetBytes / GB) : 25, 'Albums are never split across a batch; you can also pick artists by hand on the Convert tab.', 'number')}
+          <label class="row" style="margin:10px 0"><input type="checkbox" name="autoOn" ${typeof draft.autoContinue === 'object' && 'on' in draft.autoContinue ? 'checked' : ''}> Keep converting automatically after each batch</label>`;
+        break; }
+      case 6: {
+        b.innerHTML = `<p>If the Music library already holds lossy copies of albums you also have losslessly, Convertable can propose replacing them once the mirror has the album (you approve each one; nothing is deleted, only quarantined).</p>
+          <label class="row" style="margin:10px 0"><input type="checkbox" name="supersedeEnabled" ${draft.supersedeEnabled ? 'checked' : ''}> Look for legacy duplicates</label>
+          ${field('legacyRoots', 'Legacy media folders (one per line)', (draft.legacyMediaRoots || []).join('\n'), 'Defaults to Music’s media folders next to the library.')}`;
+        $('input[name=legacyRoots]', b).outerHTML = `<textarea name="legacyRoots" rows="3" style="width:100%">${esc((draft.legacyMediaRoots || []).join('\n'))}</textarea>`;
+        break; }
+      case 7: {
+        b.innerHTML = `<p>The dashboard is served by the app on this Mac. Turn on LAN access to use it from a phone; the link below carries the access token.</p>
+          <label class="row" style="margin:10px 0"><input type="checkbox" name="allowLAN" ${draft.web.allowLAN ? 'checked' : ''}> Allow access from other devices on my network (takes effect after restart)</label>
+          <label class="row" style="margin:10px 0"><input type="checkbox" name="launchAtLogin" ${draft.launchAtLogin ? 'checked' : ''}> Launch Convertable at login (set from the menu bar item)</label>
+          <div class="sub">Link: <code>http://${location.hostname}:${draft.web.port}/?token=${draft.web.token}</code></div>`;
+        break; }
+      case 8: {
+        b.innerHTML = '<p>Running the final checks…</p>';
+        const rows = await api('/setup/doctor', { method: 'POST', body: draft });
+        b.innerHTML = `<p>Final check with the settings you chose. Finish saves them and starts the first scan (read-only; it lists your library so the Convert tab can show it).</p>` + rows.map(r => `<div class="alert ${r.result === 'pass' ? '' : (r.result === 'warn' ? 'warn' : 'error')}"><span><b>${esc(r.name)}</b> — ${esc(r.detail)}</span></div>`).join('');
+        break; }
+    }
+  }
+  function apply() {
+    collect();
+    if (i === 5) { draft.batchBudgetBytes = draft.batchBudgetGB > 0 ? draft.batchBudgetGB * GB : null; draft.autoContinue = $('input[name=autoOn]', body()).checked ? { on: {} } : { off: {} }; delete draft.batchBudgetGB; delete draft.autoOn; }
+    if (i === 6) { draft.supersedeEnabled = $('input[name=supersedeEnabled]', body()).checked; draft.legacyMediaRoots = $('textarea[name=legacyRoots]', body()).value.split('\n').map(s => s.trim()).filter(Boolean); }
+    if (i === 7) { draft.web.allowLAN = $('input[name=allowLAN]', body()).checked; draft.launchAtLogin = $('input[name=launchAtLogin]', body()).checked; delete draft.allowLAN; }
+    if (i === 3) { const r = $$('input[name=lib]', body()).find(x => x.checked); if (r) draft.musicLibraryPath = r.value; delete draft.lib; }
+  }
+  $('#wizNext').onclick = async () => {
+    apply();
+    if (i === steps.length - 1) { settingsCache = await api('/setup/finish', { method: 'POST', body: draft }); $('#navSetup').hidden = true; draft = null; showPage('overview'); return; }
+    i++; render();
+  };
+  $('#wizBack').onclick = () => { apply(); i--; render(); };
+  $('#wizSkip').onclick = async () => { apply(); draft.setupCompleted = true; settingsCache = await api('/settings', { method: 'PUT', body: draft }); $('#navSetup').hidden = true; draft = null; showPage('overview'); };
+  return { open };
+})();
+$('#btnRerunSetup').onclick = () => { $('#navSetup').hidden = false; showPage('setup'); };
+
 // ---- boot
 connect();
 api('/status').then(renderStatus).catch(() => {});   // don't depend on the SSE stream for the first paint
-api('/settings').then(s => settingsCache = s).catch(() => {});
 api('/activity?limit=25').then(rows => rows.reverse().forEach(pushActivity)).catch(() => {});
-let initial = 'overview'; try { initial = localStorage.getItem('page') || 'overview'; } catch {}
-showPage(initial);
+api('/settings').then(s => {
+  settingsCache = s;
+  let initial = 'overview'; try { initial = localStorage.getItem('page') || 'overview'; } catch {}
+  if (initial === 'setup' && s.setupCompleted) initial = 'overview';
+  if (!s.setupCompleted) { $('#navSetup').hidden = false; initial = 'setup'; }
+  showPage(initial);
+}).catch(() => showPage('overview'));
 </script>
 </body>
 </html>

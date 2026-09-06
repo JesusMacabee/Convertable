@@ -115,6 +115,40 @@ public struct WebServer: Sendable {
             await self.controller.dismissAlert(b.id)
             return try self.json(await self.controller.status())
         }
+        // First-run setup probes (read-only except test-import, which cleans up after itself).
+        api.get("setup/dependencies") { _, _ in try self.json(Setup.dependencies()) }
+        api.post("setup/source") { req, ctx in
+            struct B: Decodable { var path: String }
+            let b = try await req.decode(as: B.self, context: ctx)
+            return try self.json(await Task.detached { Setup.probeSource(b.path) }.value)
+        }
+        api.post("setup/mirror") { req, ctx in
+            struct B: Decodable { var path: String; var musicLibraryPath: String }
+            let b = try await req.decode(as: B.self, context: ctx)
+            return try self.json(Setup.probeMirror(b.path, musicLibraryPath: b.musicLibraryPath))
+        }
+        api.get("setup/libraries") { _, _ in
+            let r = Setup.musicLibraries()
+            struct Out: Encodable { var libraries: [Setup.LibraryChoice]; var musicRunning: Bool; var openLibrary: String? }
+            return try self.json(Out(libraries: r.libraries, musicRunning: r.musicRunning, openLibrary: r.openLibrary))
+        }
+        api.post("setup/test-import") { req, ctx in
+            struct B: Decodable { var mirrorRoot: String; var musicLibraryPath: String }
+            let b = try await req.decode(as: B.self, context: ctx)
+            var s = await self.controller.settings; s.musicLibraryPath = b.musicLibraryPath
+            return try self.json(await Task.detached { Setup.testImport(mirrorRoot: b.mirrorRoot, settings: s) }.value)
+        }
+        api.post("setup/doctor") { req, ctx in
+            let s = try await req.decode(as: Settings.self, context: ctx)
+            return try self.json(await Task.detached { Setup.doctor(s) }.value)
+        }
+        api.post("setup/finish") { req, ctx in
+            var s = try await req.decode(as: Settings.self, context: ctx)
+            s.setupCompleted = true
+            try await self.controller.updateSettings(s)
+            try await self.controller.perform(.scan(full: true))
+            return try self.json(s)
+        }
         api.put("settings") { req, ctx in
             let s = try await req.decode(as: Settings.self, context: ctx)
             try await self.controller.updateSettings(s)

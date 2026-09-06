@@ -100,6 +100,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let imp = action("Import into Music now", #selector(importNow)); imp.isEnabled = s.musicPending > 0; menu.addItem(imp)
         menu.addItem(.separator())
         menu.addItem(action("Open Dashboard", #selector(openDashboard), key: "d"))
+        if let done = try? Settings.load().setupCompleted, !done { menu.addItem(action("Finish Setup…", #selector(openDashboard))) }
         let lal = action("Launch at Login", #selector(toggleLaunchAtLogin))
         lal.state = LaunchAtLogin.isEnabled ? .on : .off
         lal.isEnabled = LaunchAtLogin.isAvailable

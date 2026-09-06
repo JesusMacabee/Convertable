@@ -55,7 +55,7 @@ final class PipelineTests: XCTestCase {
         XCTAssertEqual(try store.counts().mirrored, 4)
         let again = try Planner(store: store, profile: .ipodClassic, fileSettleSeconds: 0, albumSettleSeconds: 0).plan(Selection(mode: .everything, ignoreSettle: true))
         XCTAssertTrue(again.albums.isEmpty)
-        XCTAssertEqual(try store.sourceFile(relPath: "Larry June/Out The Trunk/01 track.flac")?.audioMD5?.count, 32)
+        XCTAssertTrue([32, 34].contains(try store.sourceFile(relPath: "Larry June/Out The Trunk/01 track.flac")?.audioMD5?.count ?? 0), "header MD5 (32) or frame hash (f:+32)")
         XCTAssertNotNil(try store.sourceFile(relPath: "Larry June/Out The Trunk/01 track.flac")?.tagAlbumArtist)
     }
 

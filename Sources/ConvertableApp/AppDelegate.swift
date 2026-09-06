@@ -25,6 +25,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusItem = StatusItemController(controller: controller, dashboardURL: server.localURL, notifier: notifier)
         notifier.requestPermissionIfBundled()
+        if !(try? Settings.load())!.setupCompleted {
+            // First run: bring the person straight to the setup flow once the server is listening.
+            let url = server.localURL
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { if let u = URL(string: url) { NSWorkspace.shared.open(u) } }
+        }
 
         // The dashboard server must outlive any single failure (port briefly busy, network stack hiccup): restart with backoff.
         serverTask = Task { [server] in

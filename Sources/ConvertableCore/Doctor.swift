@@ -82,7 +82,10 @@ public enum Doctor {
 
         // Web port
         let port = settings.web.port
-        out.append(.init(name: "Web port", result: portIsFree(port) ? .pass : .warn, detail: "\(port) \(portIsFree(port) ? "free" : "in use")"))
+        if portIsFree(port) { out.append(.init(name: "Web port", result: .pass, detail: "\(port) free")) }
+        else if (try? Tools.run("/usr/bin/curl", ["-s", "-m", "2", "http://127.0.0.1:\(port)/health"], timeout: 5).stdout) == "ok" {
+            out.append(.init(name: "Web port", result: .pass, detail: "\(port) — Convertable's dashboard is already serving here"))
+        } else { out.append(.init(name: "Web port", result: .warn, detail: "\(port) in use by another program; pick a different port")) }
 
         // Latency benchmark (read-only; ~20 small header reads)
         if benchmark, case .available = src, let b = Benchmark.coldOpen(root: settings.sourceRoot, samples: 20) {

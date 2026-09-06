@@ -1,6 +1,6 @@
 # Convertable — Design & Build Plan
 
-*Status: Phases 0–7 built; first real batch run. Phase 8 (first-run wizard) next. Last updated 2026-09-05.*
+*Status: Phases 0–8 built. Last updated 2026-09-05.*
 
 ## 1. Purpose
 
@@ -378,6 +378,10 @@ Each phase ends with something you can run and judge.
 **Known limitations at Phase 7**: the app links Homebrew's TagLib dylibs (`/opt/homebrew/opt/taglib`), so it runs only where `brew install taglib` has been done; bundling the dylibs is a packaging follow-up. The Auto-Add import method is declined with an explanation. Retag detection between full scans relies on the daily full scan (directory mtimes do not change on in-place edits).
 
 Phase 1 is deliberately read-only so the plan output can be checked against the survey before any file is written to the NAS. The web dashboard comes before the menu bar because it's the richer UI and the easier one to iterate on; the menu bar is then a thin shell around a working system.
+
+## 16b. First-run setup (Phase 8)
+
+Shown automatically (dashboard opens on it, menu bar offers "Finish Setup…") until `setupCompleted` is true; re-runnable from Settings. Nine steps, each backed by a probe in `Setup.swift`: dependencies (afconvert, bundled TagLib, optional lame/flac with the `brew install` line); source folder (mount, protocol with an AFP warning, folder/file counts, cold/warm latency); mirror folder (writable, free space, refuses paths inside Music's media folder); Music library (every `.musiclibrary` on the Mac via Spotlight, the open one marked, Option-launch instructions); Music settings (instructions plus **Test with one file**: a generated 2-second tone is encoded, added to the open library, its recorded location compared, then removed — the only way to verify the copy-files setting); profile and budget; legacy library; access link/LAN; final `doctor` and first scan. The `.app` now bundles TagLib in `Contents/Frameworks`, so a fresh Mac needs Homebrew only for MP3/FLAC output profiles.
 
 ## 17. Assumptions to confirm
 

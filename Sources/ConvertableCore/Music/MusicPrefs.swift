@@ -25,7 +25,7 @@ public enum MusicPrefs {
         return normalize(open) == normalize(settings.musicLibraryFileURLString)
     }
 
-    static func normalize(_ s: String) -> String {
+    public static func normalize(_ s: String) -> String {
         var v = s.removingPercentEncoding ?? s
         if !v.hasSuffix("/") { v += "/" }
         return v.lowercased()

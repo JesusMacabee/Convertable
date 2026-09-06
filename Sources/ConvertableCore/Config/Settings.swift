@@ -76,6 +76,8 @@ public struct Settings: Codable, Equatable, Sendable {
     // App
     public var web: WebSettings = WebSettings()
     public var launchAtLogin: Bool = false
+    /// False until the first-run setup has been finished (or explicitly skipped); the dashboard opens on Setup until then.
+    public var setupCompleted: Bool = false
 
     public init() {}
 
@@ -105,6 +107,7 @@ public struct Settings: Codable, Equatable, Sendable {
         quarantineRetentionDays = try c.decodeIfPresent(Int.self, forKey: .quarantineRetentionDays) ?? d.quarantineRetentionDays
         web = try c.decodeIfPresent(WebSettings.self, forKey: .web) ?? d.web
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
+        setupCompleted = try c.decodeIfPresent(Bool.self, forKey: .setupCompleted) ?? d.setupCompleted
     }
 
     // MARK: Persistence

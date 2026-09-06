@@ -14,6 +14,20 @@ rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/ConvertableApp" "$APP/Contents/MacOS/Convertable"
 cp "$BIN/convertctl" "$APP/Contents/MacOS/convertctl"
 cp -R "$BIN/Convertable_ConvertableWeb.bundle" "$APP/Contents/Resources/"
+# Bundle TagLib so the app runs on Macs without Homebrew.
+mkdir -p "$APP/Contents/Frameworks"
+TAGLIB=$(brew --prefix taglib 2>/dev/null || echo /opt/homebrew/opt/taglib)
+for lib in libtag_c.2.dylib libtag.2.dylib; do cp "$TAGLIB/lib/$lib" "$APP/Contents/Frameworks/"; chmod u+w "$APP/Contents/Frameworks/$lib"; done
+for bin in "$APP/Contents/MacOS/Convertable" "$APP/Contents/MacOS/convertctl"; do
+  for lib in libtag_c.2.dylib libtag.2.dylib; do
+    old=$(otool -L "$bin" | awk '{print $1}' | grep "$lib" | head -1)
+    [ -n "$old" ] && install_name_tool -change "$old" "@executable_path/../Frameworks/$lib" "$bin"
+  done
+done
+old=$(otool -L "$APP/Contents/Frameworks/libtag_c.2.dylib" | awk '{print $1}' | grep 'libtag.2.dylib' | head -1)
+[ -n "$old" ] && install_name_tool -change "$old" "@loader_path/libtag.2.dylib" "$APP/Contents/Frameworks/libtag_c.2.dylib"
+install_name_tool -id "@loader_path/libtag_c.2.dylib" "$APP/Contents/Frameworks/libtag_c.2.dylib"
+install_name_tool -id "@loader_path/libtag.2.dylib" "$APP/Contents/Frameworks/libtag.2.dylib"
 sed "s/VERSION_PLACEHOLDER/$(git rev-list --count HEAD 2>/dev/null || echo 1)/" Scripts/Info.plist > "$APP/Contents/Info.plist"
 echo -n "APPL????" > "$APP/Contents/PkgInfo"
 codesign --force --deep --sign - "$APP"
