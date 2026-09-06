@@ -365,6 +365,16 @@ Each phase ends with something you can run and judge.
 | 6 | Review queue | Orphans, renames, retags, supersede matcher + Review page |
 | 7 | First real batch | Point at `Lossless Mirror`, pick the first batch in the dashboard, run it with you watching; fix whatever reality reveals |
 
+**Phase 7 checklist**
+1. App installed in `/Applications`, launched from there, Launch at Login on.
+2. Music: open the iPod library (`AAC Music/Music Library.musiclibrary`); confirm "Copy files to Music Media folder" is **off** and Sync Library is off; grant the Automation prompt when Convertable first talks to Music.
+3. Dashboard → Convert → pick a first batch (by artist is the clearest first run; ~25 GB) → Preview → Start. Watch Overview.
+4. When the batch completes and the albums have been imported, sync the iPod and check: gapless, art, sort order, Sound Check, album grouping.
+5. Review tab: expect supersede proposals for legacy albums the batch replaced; approve one, confirm the legacy tracks leave Music and the files land in `.quarantine/<date>/legacy/`.
+6. Then either auto-continue (Settings) or keep starting batches by hand.
+
+**Known limitations at Phase 7**: the app links Homebrew's TagLib dylibs (`/opt/homebrew/opt/taglib`), so it runs only where `brew install taglib` has been done; bundling the dylibs is a packaging follow-up. The Auto-Add import method is declined with an explanation. Retag detection between full scans relies on the daily full scan (directory mtimes do not change on in-place edits).
+
 Phase 1 is deliberately read-only so the plan output can be checked against the survey before any file is written to the NAS. The web dashboard comes before the menu bar because it's the richer UI and the easier one to iterate on; the menu bar is then a thin shell around a working system.
 
 ## 17. Assumptions to confirm
