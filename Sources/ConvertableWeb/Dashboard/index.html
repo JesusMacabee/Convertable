@@ -66,9 +66,9 @@ tr.album td:first-child { padding-left: 42px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .seg button { border: none; border-radius: 0; padding: 6px 12px; }
 .seg button.active { background: var(--accent); color: var(--accent-ink); }
-.cartBtn { position: relative; font-weight: 600; padding: 3px 10px; font-size: 12.5px; line-height: 1.4; border-radius: 999px; }
-.cartBtn .n { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 11px; text-align: center; }
-.cartBtn.empty .n { background: var(--line); color: var(--muted); }
+.cartBtn { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; font-weight: 600; font-size: 12.5px; line-height: 1; border-radius: 999px; white-space: nowrap; flex: none; }
+.cartBtn .n { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 16px; padding: 0 5px; margin-left: 6px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 11px; line-height: 1; }
+.cartBtn.is-empty .n { background: var(--line); color: var(--muted); }
 .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: min(460px, 100vw); background: var(--panel); border-left: 1px solid var(--line); box-shadow: -12px 0 40px rgba(0,0,0,.18); z-index: 20; display: flex; flex-direction: column; transform: translateX(100%); transition: transform .22s ease; }
 .drawer.open { transform: none; }
 .drawer header { position: static; border-bottom: 1px solid var(--line); }
@@ -98,7 +98,7 @@ form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 
   <span class="spacer"></span>
   <span class="ind" id="volInd"></span>
   <span class="ind" id="libInd"></span>
-  <button class="cartBtn empty" id="cartBtn" title="Conversion queue">Queue<span class="n" id="cartCount">0</span></button>
+  <button class="cartBtn is-empty" id="cartBtn" title="Conversion queue">Queue<span class="n" id="cartCount">0</span></button>
 </header>
 <div class="scrim" id="scrim" hidden></div>
 <aside class="drawer" id="drawer" aria-label="Conversion queue">
@@ -385,7 +385,7 @@ function renderCart() {
   for (const k of selAlbums) { const [d, al] = k.split(' '); const a = (albumsCache[d] || []).find(x => x.albumDir === al); items.push({ kind: 'album', key: k, label: a ? a.name : al, sub: `${artists.find(x => x.dir === d)?.name || d}${a ? ` · ${a.tracks} tracks` : ''}`, bytes: a ? a.bytes : 0 }); }
   const n = items.length;
   $('#cartCount').textContent = mode === 'artists' ? n : '·';
-  $('#cartBtn').classList.toggle('empty', mode === 'artists' && n === 0);
+  $('#cartBtn').classList.toggle('is-empty', mode === 'artists' && n === 0);
   $('#cartItems').innerHTML = mode !== 'artists'
     ? `<div class="empty">${mode === 'size' ? 'Size mode: the oldest eligible albums up to the cap.' : 'Everything eligible, oldest first.'}</div>`
     : (items.map(i => `<div class="item"><span class="chip">${i.kind}</span><span><b>${esc(i.label)}</b><div class="sub">${esc(i.sub)}</div></span><span class="sub" style="margin-left:auto">${fmtBytes(i.bytes)}</span><button class="x" data-rm="${esc(i.key)}" data-kind="${i.kind}" title="Remove">✕</button></div>`).join('') || '<div class="empty">Nothing queued yet. Tick artists or albums on the Convert tab.</div>');
