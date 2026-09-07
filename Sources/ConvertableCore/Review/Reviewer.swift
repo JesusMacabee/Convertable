@@ -105,12 +105,15 @@ public struct Reviewer {
                 moved += 1
             } catch { try? store.log("warn", "tags", "rename failed: \(error)", relPath: src.relPath) }
         }
-        // Leave no empty album folders behind.
+        // Leave no empty album/artist folders behind: deepest first, so a parent emptied by its child's removal goes too.
         if moved > 0, let e = FileManager.default.enumerator(atPath: mirrorRoot) {
-            for case let p as String in e where !p.hasPrefix(".") {
-                let full = mirrorRoot + "/" + p
+            let dirs = e.compactMap { $0 as? String }.filter { !$0.hasPrefix(".") }.filter { p in
                 var isDir: ObjCBool = false
-                if FileManager.default.fileExists(atPath: full, isDirectory: &isDir), isDir.boolValue, (try? FileManager.default.contentsOfDirectory(atPath: full).filter { !$0.hasPrefix(".") })?.isEmpty == true {
+                return FileManager.default.fileExists(atPath: mirrorRoot + "/" + p, isDirectory: &isDir) && isDir.boolValue
+            }.sorted { $0.count > $1.count }
+            for p in dirs {
+                let full = mirrorRoot + "/" + p
+                if (try? FileManager.default.contentsOfDirectory(atPath: full).filter { !$0.hasPrefix(".") })?.isEmpty == true {
                     try? FileManager.default.removeItem(atPath: full)
                 }
             }
