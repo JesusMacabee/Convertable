@@ -56,14 +56,17 @@ public struct StatusSnapshot: Codable, Equatable, Sendable {
 public struct LibraryCounts: Codable, Equatable, Sendable {
     public var artists: Int, albums: Int, tracks: Int, lossless: Int, lossy: Int, bytes: Int64, mirrored: Int, missing: Int
     public var backlogAlbums: Int, backlogBytes: Int64, settlingAlbums: Int
+    public var needsTaggingAlbums: Int = 0, needsTaggingTracks: Int = 0, auditingAlbums: Int = 0
 }
 
 public struct ArtistRow: Codable, Equatable, Sendable {
     public var dir: String, name: String, albums: Int, tracks: Int, bytes: Int64, mirrored: Int, pinned: Bool, status: String
+    public var untagged: Int = 0
 }
 
 public struct AlbumRow: Codable, Equatable, Sendable {
     public var artistDir: String, albumDir: String, name: String, tracks: Int, bytes: Int64, mirrored: Int, lossless: Int, lossy: Int, status: String, firstSeen: Double
+    public var untagged: Int = 0, unaudited: Int = 0
 }
 
 public struct PlanPreview: Codable, Equatable, Sendable {
@@ -77,6 +80,7 @@ public struct PlanPreview: Codable, Equatable, Sendable {
     public var overflowBytes: Int64
     public var backlogAlbums: Int, backlogBytes: Int64
     public var settling: Int, alreadyMirrored: Int, skipped: Int
+    public var needsTagging: Int = 0, auditing: Int = 0
     public var estimatedSeconds: Double
 }
 
@@ -100,6 +104,7 @@ public enum Command: Codable, Sendable {
     case dismiss(id: Int64)
     case indexLegacy
     case scanDeadEntries
+    case auditTags
 }
 
 /// Pushed over SSE. Kept small; clients refetch details.

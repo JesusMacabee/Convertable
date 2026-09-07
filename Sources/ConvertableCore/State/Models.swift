@@ -24,6 +24,13 @@ public struct SourceFile: Equatable, Sendable, Identifiable {
     public var tagArtist: String?
     public var tagAlbumArtist: String?
     public var tagAlbum: String?
+    public var hasMBID: Bool? = nil          // nil = not audited yet
+    public var tagTitle: String? = nil
+    public var tagTrack: Int? = nil
+    public var tagDisc: Int? = nil
+    public var tagDiscTotal: Int? = nil
+    public var tagYear: Int? = nil
+    public var mbidRelease: String? = nil
 
     public var fileName: String { (relPath as NSString).lastPathComponent }
     public var stem: String { (fileName as NSString).deletingPathExtension }

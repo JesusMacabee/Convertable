@@ -100,6 +100,7 @@ public struct WebServer: Sendable {
             try await self.controller.perform(.dismiss(id: b.id))
             return try self.json(await self.controller.proposals())
         }
+        api.post("tags/audit") { _, _ in try await self.controller.perform(.auditTags); return try self.json(await self.controller.status()) }
         api.post("music/scan-dead") { _, _ in try await self.controller.perform(.scanDeadEntries); return try self.json(await self.controller.status()) }
         api.post("legacy/index") { _, _ in try await self.controller.perform(.indexLegacy); return try self.json(await self.controller.status()) }
         api.post("music/import") { _, _ in try await self.controller.perform(.importNow); return try self.json(await self.controller.status()) }

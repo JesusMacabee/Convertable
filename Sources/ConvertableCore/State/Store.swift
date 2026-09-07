@@ -163,7 +163,42 @@ public final class Store: @unchecked Sendable {
                    observations: Int(r.int("observations") ?? 1), firstSeen: r.double("first_seen")!, lastSeenScan: r.int("last_seen_scan")!,
                    status: FileStatus(rawValue: r.text("status")!) ?? .active, missingSince: r.double("missing_since"),
                    audioMD5: r.text("audio_md5"), tagHash: r.text("tag_hash"), tagArtist: r.text("tag_artist"),
-                   tagAlbumArtist: r.text("tag_albumartist"), tagAlbum: r.text("tag_album"))
+                   tagAlbumArtist: r.text("tag_albumartist"), tagAlbum: r.text("tag_album"),
+                   hasMBID: r.int("has_mbid").map { $0 != 0 }, tagTitle: r.text("tag_title"), tagTrack: r.int("tag_track").map(Int.init),
+                   tagDisc: r.int("tag_disc").map(Int.init), tagDiscTotal: r.int("tag_disctotal").map(Int.init), tagYear: r.int("tag_year").map(Int.init),
+                   mbidRelease: r.text("mbid_release"))
+    }
+
+    /// Files whose tags have never been audited, or changed since they were.
+    public func filesNeedingTagAudit(limit: Int = 2000) throws -> [SourceFile] {
+        try db.query("""
+            SELECT * FROM source_files WHERE status='active' AND kind != 'other'
+              AND (tag_audit_at IS NULL OR stable_since > tag_audit_at) ORDER BY artist_dir, album_dir, rel_path LIMIT ?
+            """, [.integer(Int64(limit))], Store.sourceFile)
+    }
+
+    public func recordTagAudit(id: Int64, info: AudioFileInfo, now: Double) throws {
+        let mbid = info.first("MUSICBRAINZ_ALBUMID") ?? info.first("MUSICBRAINZ_RELEASEGROUPID")
+        let hasMBID = mbid != nil || info.first("MUSICBRAINZ_TRACKID") != nil || info.first("MUSICBRAINZ_RELEASETRACKID") != nil
+        let year = (info.first("ORIGINALYEAR") ?? info.first("DATE") ?? info.first("ORIGINALDATE")).flatMap { Int($0.prefix(4)) }
+        func num(_ k: String) -> Int? { info.first(k).flatMap { Int($0.split(separator: "/").first.map(String.init) ?? "") } }
+        let discTotal = info.first("DISCTOTAL").flatMap { Int($0) } ?? info.first("DISCNUMBER").flatMap { $0.contains("/") ? Int($0.split(separator: "/").last!) : nil }
+        try db.run("""
+            UPDATE source_files SET has_mbid=?, tag_audit_at=?, tag_title=?, tag_artist=?, tag_albumartist=?, tag_album=?,
+                   tag_track=?, tag_disc=?, tag_disctotal=?, tag_year=?, mbid_release=? WHERE id=?
+            """, [.integer(hasMBID ? 1 : 0), .real(now), Database.Value(info.title), Database.Value(info.artist),
+                  Database.Value(info.albumArtist ?? info.artist), Database.Value(info.album),
+                  Database.Value(num("TRACKNUMBER")), Database.Value(num("DISCNUMBER")), Database.Value(discTotal), Database.Value(year),
+                  Database.Value(info.first("MUSICBRAINZ_ALBUMID")), .integer(id)])
+    }
+
+    /// Deterministic folder for a release: first come, first served; a different release that would collide gets " [2]".
+    public func albumFolder(releaseKey: String, preferred: String, now: Double = Date().timeIntervalSince1970) throws -> String {
+        if case let .text(f)? = try db.scalar("SELECT folder FROM album_folders WHERE release_key=?", [.text(releaseKey)]) { return f }
+        var candidate = preferred; var n = 2
+        while try db.scalar("SELECT COUNT(*) FROM album_folders WHERE folder=?", [.text(candidate)]) != .integer(0) { candidate = preferred + " [\(n)]"; n += 1 }
+        try db.run("INSERT INTO album_folders (release_key, folder, created_at) VALUES (?,?,?)", [.text(releaseKey), .text(candidate), .real(now)])
+        return candidate
     }
 
     // MARK: Outputs
@@ -284,6 +319,8 @@ public final class Store: @unchecked Sendable {
         public var minObservations: Int
         public var displayArtist: String? // from tags when known
         public var displayAlbum: String?
+        public var untagged: Int = 0      // tracks audited and found without MusicBrainz IDs
+        public var unaudited: Int = 0     // tracks not yet audited
     }
 
     public func albumSummaries(artist: String? = nil) throws -> [AlbumSummary] {
@@ -294,7 +331,9 @@ public final class Store: @unchecked Sendable {
                    SUM(CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END) mirrored,
                    MIN(s.first_seen) first_seen, MAX(s.stable_since) last_change, MIN(s.observations) min_obs,
                    MAX(s.tag_albumartist) tag_aa, MAX(s.tag_album) tag_album,
-                   SUM(CASE WHEN o.id IS NOT NULL AND ((COALESCE(o.tags_written_at, o.encoded_at) IS NOT NULL AND s.stable_since > COALESCE(o.tags_written_at, o.encoded_at)) OR o.tag_policy < \(TagPolicy.version)) THEN 1 ELSE 0 END) stale
+                   SUM(CASE WHEN o.id IS NOT NULL AND ((COALESCE(o.tags_written_at, o.encoded_at) IS NOT NULL AND s.stable_since > COALESCE(o.tags_written_at, o.encoded_at)) OR o.tag_policy < \(TagPolicy.version)) THEN 1 ELSE 0 END) stale,
+                   SUM(CASE WHEN s.has_mbid = 0 THEN 1 ELSE 0 END) untagged,
+                   SUM(CASE WHEN s.has_mbid IS NULL THEN 1 ELSE 0 END) unaudited
             FROM source_files s
             LEFT JOIN outputs o ON o.source_id = s.id AND o.verify_ok = 1
             WHERE s.status='active' AND s.kind != 'other'
@@ -306,7 +345,7 @@ public final class Store: @unchecked Sendable {
             AlbumSummary(key: AlbumKey(artistDir: r.text(0)!, albumDir: r.text(1)!), tracks: Int(r.int(2)!), bytes: r.int(3)!,
                          losslessTracks: Int(r.int(4)!), lossyTracks: Int(r.int(5)!), mirrored: Int(r.int(6)!), stale: Int(r.int(12) ?? 0),
                          firstSeen: r.double(7)!, lastChange: r.double(8)!, minObservations: Int(r.int(9)!),
-                         displayArtist: r.text(10), displayAlbum: r.text(11))
+                         displayArtist: r.text(10), displayAlbum: r.text(11), untagged: Int(r.int(13) ?? 0), unaudited: Int(r.int(14) ?? 0))
         }
     }
 
@@ -318,6 +357,7 @@ public final class Store: @unchecked Sendable {
         public var bytes: Int64
         public var mirrored: Int
         public var pinned: Bool
+        public var untagged: Int = 0
         public var status: String { mirrored == 0 ? "none" : (mirrored == tracks ? "complete" : "partial") }
     }
 
@@ -325,7 +365,8 @@ public final class Store: @unchecked Sendable {
         let pins = try pinnedArtists()
         return try db.query("""
             SELECT s.artist_dir, COUNT(DISTINCT s.album_dir) albums, COUNT(*) tracks, SUM(s.size) bytes,
-                   SUM(CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END) mirrored, MAX(s.tag_albumartist) tag_aa
+                   SUM(CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END) mirrored, MAX(s.tag_albumartist) tag_aa,
+                   SUM(CASE WHEN s.has_mbid = 0 THEN 1 ELSE 0 END) untagged
             FROM source_files s
             LEFT JOIN outputs o ON o.source_id = s.id AND o.verify_ok = 1
             WHERE s.status='active' AND s.kind != 'other'
@@ -333,7 +374,7 @@ public final class Store: @unchecked Sendable {
             """) { r in
             let dir = r.text(0)!
             return ArtistSummary(artistDir: dir, displayName: r.text(5) ?? dir, albums: Int(r.int(1)!), tracks: Int(r.int(2)!),
-                                 bytes: r.int(3)!, mirrored: Int(r.int(4)!), pinned: pins.contains(dir))
+                                 bytes: r.int(3)!, mirrored: Int(r.int(4)!), pinned: pins.contains(dir), untagged: Int(r.int(6) ?? 0))
         }
     }
 

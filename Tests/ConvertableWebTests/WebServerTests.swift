@@ -12,6 +12,8 @@ final class WebServerTests: XCTestCase {
     override func setUpWithError() throws {
         settings = Settings()
         settings.web.token = "test-token-123"
+        settings.requireMusicBrainz = false   // fixture rows carry no tags; the gate has its own tests
+        settings.tagDerivedPaths = false
         let store = try Store.inMemory()
         // A tiny library so artists/preview have something to return.
         for (i, rel) in ["Adele/21/01.flac", "Adele/21/02.flac", "Beck/Odelay/01.mp3"].enumerated() {

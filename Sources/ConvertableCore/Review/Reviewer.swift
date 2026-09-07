@@ -85,6 +85,39 @@ public struct Reviewer {
         return created
     }
 
+    /// Moves already-mirrored files whose source now qualifies for a tag-derived path. One move per file, Music
+    /// re-pointed afterwards by the relocate pass. Returns how many files moved.
+    public func repathMirror(profile: Profile, shareIO: ShareIO) async -> Int {
+        guard let rows = try? store.db.query("""
+            SELECT o.id o_id, o.rel_path o_rel, s.* FROM outputs o JOIN source_files s ON s.id = o.source_id
+            WHERE o.verify_ok = 1 AND s.status = 'active' AND s.has_mbid = 1
+            """, [], { r -> (Int64, String, SourceFile) in (r.int("o_id")!, r.text("o_rel")!, Store.sourceFile(r)) }) else { return 0 }
+        var moved = 0
+        for (oid, rel, src) in rows {
+            let action = profile.action(for: src)
+            guard let ext = Planner.outputExtension(src, action), let desired = try? TagPaths.outputRelPath(for: src, outputExt: ext, store: store), desired != rel else { continue }
+            let from = mirrorRoot + "/" + rel, to = mirrorRoot + "/" + desired
+            guard await shareIO.exists(from), !(await shareIO.exists(to)) else { continue }
+            do {
+                try await shareIO.move(from: from, to: to)
+                try store.db.run("UPDATE outputs SET rel_path=?, music_relocate_pending=CASE WHEN music_persistent_id IS NULL THEN 0 ELSE 1 END WHERE id=?", [.text(desired), .integer(oid)])
+                try? store.log("info", "tags", "renamed → \(desired)", relPath: src.relPath)
+                moved += 1
+            } catch { try? store.log("warn", "tags", "rename failed: \(error)", relPath: src.relPath) }
+        }
+        // Leave no empty album folders behind.
+        if moved > 0, let e = FileManager.default.enumerator(atPath: mirrorRoot) {
+            for case let p as String in e where !p.hasPrefix(".") {
+                let full = mirrorRoot + "/" + p
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: full, isDirectory: &isDir), isDir.boolValue, (try? FileManager.default.contentsOfDirectory(atPath: full).filter { !$0.hasPrefix(".") })?.isEmpty == true {
+                    try? FileManager.default.removeItem(atPath: full)
+                }
+            }
+        }
+        return moved
+    }
+
     public func quarantineDir(now: Double? = nil) -> String {
         let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
         return mirrorRoot + "/.quarantine/" + df.string(from: Date(timeIntervalSince1970: now ?? clock()))

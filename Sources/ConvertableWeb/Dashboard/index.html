@@ -131,6 +131,7 @@ form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 
     <div class="card"><h3>Backlog</h3><div class="big" id="backlog">—</div><div class="sub" id="backlogDetail"></div></div>
     <div class="card"><h3>Mirrored</h3><div class="big" id="mirrored">—</div><div class="sub" id="mirroredDetail"></div></div>
     <div class="card"><h3>Scans</h3><div class="big" id="scanState">—</div><div class="sub" id="scanDetail"></div></div>
+    <div class="card" id="tagCard"><h3>Needs tagging</h3><div class="big" id="needsTag">—</div><div class="sub" id="needsTagDetail"></div></div>
   </div>
   <div class="card" style="margin-top:14px" id="batchCard">
     <h3>Current batch</h3>
@@ -208,6 +209,8 @@ form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 
     <label>Music library bundle <input name="musicLibraryPath"><span class="help">The .musiclibrary the iPod is paired to.</span></label>
     <label>Import method <select name="importMethod"><option value="appleScript">Reference in place via AppleScript</option><option value="autoAddFolder">Hand off to "Automatically Add to Music"</option></select></label>
     <label>Profile <select name="profileID"></select></label>
+    <label>Require MusicBrainz tags <input name="requireMusicBrainz" type="checkbox" style="justify-self:start"><span class="help">Only albums whose every track carries MusicBrainz IDs are converted; the rest are listed as "needs tagging" until you run Picard on them.</span></label>
+    <label>Tag-derived mirror paths <input name="tagDerivedPaths" type="checkbox" style="justify-self:start"><span class="help">Name mirror folders and files from tags (Album Artist/Album (Year)/NN Title) instead of copying the source folder names. Already-mirrored albums are renamed once their tags qualify.</span></label>
     <label>Default batch budget (GB) <input name="batchBudgetGB" type="number" min="0" step="1"><span class="help">Source bytes per size-mode batch. 0 = unlimited.</span></label>
     <label>Auto-continue <select name="autoContinueMode"><option value="off">Off — wait for me</option><option value="on">On — keep going</option><option value="window">Only in a time window</option></select></label>
     <label>Window (hours, 0–23) <span class="row"><input name="windowStart" type="number" min="0" max="23" style="width:80px"> to <input name="windowEnd" type="number" min="0" max="23" style="width:80px"></span></label>
@@ -270,6 +273,8 @@ function renderStatus(s) {
   $('#libDetail').textContent = `${L.artists} artists · ${L.albums} albums · ${fmtBytes(L.bytes)} · ${L.lossless.toLocaleString()} lossless / ${L.lossy.toLocaleString()} lossy` + (L.missing ? ` · ${L.missing} missing` : '');
   $('#backlog').textContent = L.backlogAlbums + ' albums';
   $('#backlogDetail').textContent = fmtBytes(L.backlogBytes) + ' of source to convert' + (L.settlingAlbums ? ` · ${L.settlingAlbums} still settling` : '');
+  $('#needsTag').textContent = (L.needsTaggingAlbums || 0) + ' albums';
+  $('#needsTagDetail').textContent = L.needsTaggingAlbums ? `${L.needsTaggingTracks} tracks without MusicBrainz IDs — run Picard, they join the backlog on the next scan` : (L.auditingAlbums ? `${L.auditingAlbums} albums still being audited` : 'every eligible album carries MusicBrainz IDs');
   $('#mirrored').textContent = L.mirrored.toLocaleString() + ' tracks';
   $('#mirroredDetail').textContent = L.tracks ? Math.round(100 * L.mirrored / L.tracks) + '% of library' : '';
   $('#scanState').textContent = s.scanInProgress ? 'Scanning…' : (s.lastIncrementalScan || s.lastFullScan ? ago(Math.max(s.lastIncrementalScan || 0, s.lastFullScan || 0)) : 'never');
@@ -352,12 +357,12 @@ function renderArtists() {
       <td><span class="star ${a.pinned ? 'on' : ''}" data-pin="${esc(a.dir)}" title="Pin: always queue first">★</span></td>
       <td><a href="#" data-expand="${esc(a.dir)}">${expanded.has(a.dir) ? '▾' : '▸'} ${esc(a.name)}</a>${a.name !== a.dir ? ` <span class="sub">${esc(a.dir)}</span>` : ''}</td>
       <td class="num">${a.albums}</td><td class="num">${a.tracks}</td><td class="num">${fmtBytes(a.bytes)}</td>
-      <td class="status-${a.status}">${a.status === 'none' ? '—' : a.status === 'complete' ? '✓ complete' : `${a.mirrored}/${a.tracks}`}</td></tr>` +
+      <td class="status-${a.status}">${a.status === 'none' ? '—' : a.status === 'complete' ? '✓ complete' : `${a.mirrored}/${a.tracks}`}${a.untagged ? ` <span class="chip" title="tracks without MusicBrainz IDs — held back until tagged">${a.untagged} untagged</span>` : ''}</td></tr>` +
       (expanded.has(a.dir) ? (albumsCache[a.dir] || []).map(al => { const key = a.dir + ' ' + al.albumDir; return `<tr class="album" data-dir="${esc(a.dir)}">
         <td><input type="checkbox" ${dis} ${selAlbums.has(key) || selArtists.has(a.dir) ? 'checked' : ''} ${selArtists.has(a.dir) ? 'disabled' : ''} data-alb="${esc(a.dir)}" data-albdir="${esc(al.albumDir)}"></td><td></td>
         <td>${esc(al.name)} <span class="sub">${al.lossless ? al.lossless + ' lossless' : ''}${al.lossy ? (al.lossless ? ' · ' : '') + al.lossy + ' copy-through' : ''}</span></td>
         <td></td><td class="num">${al.tracks}</td><td class="num">${fmtBytes(al.bytes)}</td>
-        <td class="status-${al.status}">${al.status === 'none' ? '—' : al.status === 'complete' ? '✓' : `${al.mirrored}/${al.tracks}`}</td></tr>`; }).join('') : '');
+        <td class="status-${al.status}">${al.status === 'none' ? '—' : al.status === 'complete' ? '✓' : `${al.mirrored}/${al.tracks}`}${al.untagged ? ` <span class="chip">needs tags</span>` : (al.unaudited ? ' <span class="chip">auditing</span>' : '')}</td></tr>`; }).join('') : '');
   }).join('') || '<tr><td colspan="7" class="empty">No artists match.</td></tr>';
   $$('input[data-partial]', tb).forEach(c => c.indeterminate = true);
   $$('[data-expand]', tb).forEach(a => a.onclick = async e => { e.preventDefault(); const d = a.dataset.expand; if (expanded.has(d)) expanded.delete(d); else { expanded.add(d); if (!albumsCache[d]) albumsCache[d] = await api('/albums?artist=' + encodeURIComponent(d)); } renderArtists(); });
@@ -418,7 +423,7 @@ $('#btnPreview').onclick = async () => {
     <ul>${p.albums.map(li).join('') || '<li class="sub">Nothing eligible in this selection.</li>'}</ul>
     ${p.overflow.length ? `<div class="alert warn"><span><b>${p.overflow.length} more albums (${fmtBytes(p.overflowBytes)}) are beyond the cap.</b> Convert all ${fmtBytes(p.bytesIn + p.overflowBytes)}, or respect the cap and stop after the list above.</span></div><ul>${p.overflow.map(li).join('')}</ul>` : ''}
     ${p.backlogAlbums ? `<div class="sub">After this batch: ${p.backlogAlbums} albums / ${fmtBytes(p.backlogBytes)} remain in the backlog.</div>` : ''}
-    <div class="sub">Not included: ${p.settling} still settling · ${p.alreadyMirrored} already mirrored · ${p.skipped} skipped by profile.</div>
+    <div class="sub">Not included: ${p.settling} still settling · ${p.alreadyMirrored} already mirrored · ${p.skipped} skipped by profile${p.needsTagging ? ` · <b>${p.needsTagging} need MusicBrainz tags</b>` : ''}${p.auditing ? ` · ${p.auditing} being audited` : ''}.</div>
     <div class="row" style="margin-top:10px">
       ${p.overflow.length ? `<button class="primary" id="startAll">Convert all ${fmtBytes(p.bytesIn + p.overflowBytes)}</button><button id="startCap">Respect cap (${fmtBytes(p.bytesIn)})</button>` : `<button class="primary" id="startCap" ${p.albums.length ? '' : 'disabled'}>Start batch</button>`}
     </div>`;
@@ -484,6 +489,7 @@ async function loadSettings() {
   const ac = s.autoContinue; f.autoContinueMode.value = typeof ac === 'string' ? ac : (ac.window ? 'window' : (ac.on !== undefined ? 'on' : 'off'));
   if (ac.window) { f.windowStart.value = ac.window.startHour; f.windowEnd.value = ac.window.endHour; }
   f.webPort.value = s.web.port; f.allowLAN.checked = s.web.allowLAN;
+  f.requireMusicBrainz.checked = !!s.requireMusicBrainz; f.tagDerivedPaths.checked = !!s.tagDerivedPaths;
   $('#accessLink').textContent = `http://${location.hostname}:${s.web.port}/?token=${s.web.token}`;
 }
 $('#settingsForm').onsubmit = async e => {
@@ -495,6 +501,7 @@ $('#settingsForm').onsubmit = async e => {
   s.batchBudgetBytes = parseInt(f.batchBudgetGB.value) > 0 ? parseInt(f.batchBudgetGB.value) * GB : null;
   s.autoContinue = f.autoContinueMode.value === 'window' ? { window: { startHour: parseInt(f.windowStart.value) || 0, endHour: parseInt(f.windowEnd.value) || 0 } } : { [f.autoContinueMode.value]: {} };
   s.web.port = parseInt(f.webPort.value); s.web.allowLAN = f.allowLAN.checked;
+  s.requireMusicBrainz = f.requireMusicBrainz.checked; s.tagDerivedPaths = f.tagDerivedPaths.checked;
   try { settingsCache = await api('/settings', { method: 'PUT', body: s }); $('#settingsMsg').textContent = 'Saved.'; }
   catch (err) { $('#settingsMsg').textContent = 'Not saved: ' + err.message; }
 };

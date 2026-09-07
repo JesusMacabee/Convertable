@@ -7,7 +7,7 @@ import ConvertableWeb
 struct Convertctl: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Convertable command line — diagnostics and scripting over the same core as the app.",
-        subcommands: [Doctor.self, Config.self, Tags.self, Scan.self, PlanCommand.self, Artists.self, Status.self, Pin.self, Run.self, Serve.self, WebURL.self, Music.self, Review.self],
+        subcommands: [Doctor.self, Config.self, Tags.self, Scan.self, PlanCommand.self, Artists.self, Status.self, Pin.self, Run.self, Serve.self, WebURL.self, Music.self, Review.self, Audit.self],
         defaultSubcommand: Doctor.self)
 }
 
@@ -117,7 +117,8 @@ struct PlanCommand: ParsableCommand {
             mode = .size
             capBytes = budget.flatMap(ByteParser.parse) ?? settings.batchBudgetBytes
         }
-        let planner = Planner(store: store, profile: prof, fileSettleSeconds: settings.fileSettleSeconds, albumSettleSeconds: settings.albumSettleSeconds)
+        let planner = Planner(store: store, profile: prof, fileSettleSeconds: settings.fileSettleSeconds, albumSettleSeconds: settings.albumSettleSeconds,
+                              requireMusicBrainz: settings.requireMusicBrainz, tagDerivedPaths: settings.tagDerivedPaths)
         let plan = try planner.plan(Selection(mode: mode, cap: capBytes, ignoreSettle: ignoreSettle))
 
         print("Profile: \(prof.name)")
@@ -138,7 +139,9 @@ struct PlanCommand: ParsableCommand {
         let settling = plan.ineligible.filter { if case .settling = $0.1 { return true }; return false }.count
         let done = plan.ineligible.filter { $0.1 == .nothingToDo }.count
         let skipped = plan.ineligible.filter { $0.1 == .allSkipped }.count
-        print("Not in this plan: \(settling) settling, \(done) already mirrored, \(skipped) all-skipped")
+        let tags = plan.ineligible.filter { if case .needsTagging = $0.1 { return true }; return false }.count
+        let auditing = plan.ineligible.filter { $0.1 == .auditing }.count
+        print("Not in this plan: \(settling) settling, \(done) already mirrored, \(skipped) all-skipped, \(tags) need MusicBrainz tags, \(auditing) being audited")
     }
 }
 
@@ -236,7 +239,8 @@ struct Run: AsyncParsableCommand {
         else if everything { mode = .everything }
         else { mode = .size; capBytes = budget.flatMap(ByteParser.parse) ?? settings.batchBudgetBytes }
         let selection = Selection(mode: mode, cap: capBytes, ignoreSettle: ignoreSettle)
-        let planner = Planner(store: store, profile: prof, fileSettleSeconds: settings.fileSettleSeconds, albumSettleSeconds: settings.albumSettleSeconds)
+        let planner = Planner(store: store, profile: prof, fileSettleSeconds: settings.fileSettleSeconds, albumSettleSeconds: settings.albumSettleSeconds,
+                              requireMusicBrainz: settings.requireMusicBrainz, tagDerivedPaths: settings.tagDerivedPaths)
         let plan = try planner.plan(selection)
         print("Selection: \(selection.description) → \(plan.albums.count) albums, \(plan.trackCount) tracks, \(ByteCount.string(plan.bytesIn)) in")
         if dryRun || plan.albums.isEmpty { return }
@@ -451,6 +455,30 @@ struct Review: AsyncParsableCommand {
         func run() throws {
             let s = try Settings.load(); let store = try openStore()
             print("new supersede proposals: \(try SupersedeMatcher(store: store, profile: Profile.named(s.profileID)!).run())")
+        }
+    }
+}
+
+
+// MARK: - Tags
+
+struct Audit: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Read tags of new/changed source files (MusicBrainz IDs, names, path fields) and list what needs tagging.")
+    @Flag(name: .long, help: "Also rename already-mirrored files to tag-derived paths where their tags now qualify.") var repath = false
+    func run() async throws {
+        let s = try Settings.load(); let store = try openStore()
+        guard case let .available(mount) = VolumeGate.check(root: s.sourceRoot) else { throw ValidationError("source volume not available") }
+        let io = ShareIO(limit: s.shareConcurrencyOverride ?? mount.suggestedConcurrency, maxLimit: 8)
+        var audit = TagAudit(store: store, sourceRoot: s.sourceRoot)
+        audit.onProgress = { done, ids in print("  \(done) files read, \(ids) with MusicBrainz IDs") }
+        let r = try await audit.run(shareIO: io)
+        print("audited \(r.audited) files: \(r.withMBID) with MusicBrainz IDs, \(r.failed) unreadable")
+        let sums = try store.albumSummaries()
+        let untagged = sums.filter { $0.untagged > 0 }
+        print("\(untagged.count) albums (\(untagged.reduce(0) { $0 + $1.untagged }) tracks) need tagging; \(sums.filter { $0.unaudited > 0 }.count) albums still unaudited")
+        if repath, let prof = Profile.named(s.profileID) {
+            let moved = await Reviewer(store: store, mirrorRoot: s.mirrorRoot).repathMirror(profile: prof, shareIO: io)
+            print("renamed \(moved) mirror files to tag-derived paths")
         }
     }
 }

@@ -191,6 +191,23 @@ public enum Schema {
         ALTER TABLE proposals_v6 RENAME TO proposals;
         CREATE INDEX proposals_state ON proposals(state);
         """,
+        // v7 — tag audit (MusicBrainz gate) and tag-derived mirror paths
+        """
+        ALTER TABLE source_files ADD COLUMN has_mbid INTEGER;          -- NULL = not audited yet
+        ALTER TABLE source_files ADD COLUMN tag_audit_at REAL;
+        ALTER TABLE source_files ADD COLUMN tag_title TEXT;
+        ALTER TABLE source_files ADD COLUMN tag_track INTEGER;
+        ALTER TABLE source_files ADD COLUMN tag_disc INTEGER;
+        ALTER TABLE source_files ADD COLUMN tag_disctotal INTEGER;
+        ALTER TABLE source_files ADD COLUMN tag_year INTEGER;
+        ALTER TABLE source_files ADD COLUMN mbid_release TEXT;
+        CREATE INDEX source_files_mbid ON source_files(has_mbid);
+        CREATE TABLE album_folders (
+            release_key TEXT PRIMARY KEY,   -- MusicBrainz release id, or artist/album dirs when there is none
+            folder      TEXT NOT NULL UNIQUE,
+            created_at  REAL NOT NULL
+        );
+        """,
     ]
 
     public static var currentVersion: Int { migrations.count }

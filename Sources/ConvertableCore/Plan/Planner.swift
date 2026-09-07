@@ -7,11 +7,14 @@ public struct Planner {
     public let profile: Profile
     public let fileSettleSeconds: Int
     public let albumSettleSeconds: Int
+    public var requireMusicBrainz = false
+    public var tagDerivedPaths = false
     public var clock: () -> Double = { Date().timeIntervalSince1970 }
 
-    public init(store: Store, profile: Profile, fileSettleSeconds: Int, albumSettleSeconds: Int) {
+    public init(store: Store, profile: Profile, fileSettleSeconds: Int, albumSettleSeconds: Int, requireMusicBrainz: Bool = false, tagDerivedPaths: Bool = false) {
         self.store = store; self.profile = profile
         self.fileSettleSeconds = fileSettleSeconds; self.albumSettleSeconds = albumSettleSeconds
+        self.requireMusicBrainz = requireMusicBrainz; self.tagDerivedPaths = tagDerivedPaths
     }
 
     public func plan(_ selection: Selection) throws -> Plan {
@@ -36,6 +39,11 @@ public struct Planner {
 
         for s in summaries {
             guard s.mirrored < s.tracks || s.stale > 0 else { ineligible.append((s.key, .nothingToDo)); continue }
+            if requireMusicBrainz {
+                // Whole albums only: a mix of tagged and untagged tracks would split the album across two names.
+                if s.untagged > 0 { ineligible.append((s.key, .needsTagging(untagged: s.untagged))); continue }
+                if s.unaudited > 0 { ineligible.append((s.key, .auditing)); continue }
+            }
             if !selection.ignoreSettle {
                 let fileWait = Double(fileSettleSeconds) - (now - s.lastChange)
                 let albumWait = Double(albumSettleSeconds) - (now - s.lastChange)
@@ -61,9 +69,13 @@ public struct Planner {
             }
             guard !work.isEmpty else { ineligible.append((s.key, .allSkipped)); continue }
             let mapping = PathMapping.outputRelPaths(for: work.map { ($0.0.relPath, $0.1) })
-            let tracks = work.map { f, a, o in
-                PlannedTrack(source: f, action: a, outputRelPath: o?.relPath ?? mapping[f.relPath] ?? f.relPath,
-                             estimatedOutBytes: o == nil ? Planner.estimate(f, a) : 0, existingOutput: o)
+            var tracks: [PlannedTrack] = []
+            for (f, a, o) in work {
+                var path = o?.relPath ?? mapping[f.relPath] ?? f.relPath
+                if o == nil, tagDerivedPaths, let ext = Planner.outputExtension(f, a), let derived = try TagPaths.outputRelPath(for: f, outputExt: ext, store: store) {
+                    path = derived
+                }
+                tracks.append(PlannedTrack(source: f, action: a, outputRelPath: path, estimatedOutBytes: o == nil ? Planner.estimate(f, a) : 0, existingOutput: o))
             }
             candidates.append(PlannedAlbum(key: s.key, displayArtist: s.displayArtist ?? s.key.artistDir,
                                            displayAlbum: s.displayAlbum ?? (s.key.albumDir.isEmpty ? "(loose files)" : s.key.albumDir),
@@ -104,6 +116,14 @@ public struct Planner {
         if case .everything = selection.mode, selection.cap != nil { backlogAlbums = overflow.count; backlogBytes = overflow.reduce(0) { $0 + $1.bytesIn }; overflow = [] }
 
         return Plan(selection: selection, albums: fits, overflow: overflow, ineligible: ineligible, backlogAlbums: backlogAlbums, backlogBytes: backlogBytes)
+    }
+
+    static func outputExtension(_ f: SourceFile, _ a: Action) -> String? {
+        switch a {
+        case let .transcode(spec): return spec.outputExtension
+        case .copyThrough: return f.ext
+        case .skip: return nil
+        }
     }
 
     static func estimate(_ f: SourceFile, _ a: Action) -> Int64 {

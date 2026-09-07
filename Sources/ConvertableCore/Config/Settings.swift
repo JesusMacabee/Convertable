@@ -67,6 +67,12 @@ public struct Settings: Codable, Equatable, Sendable {
     public var batchBudgetBytes: Int64? = 25 * 1_000_000_000
     public var autoContinue: AutoContinue = .off
 
+    // Tag policy
+    /// Only albums whose every track carries MusicBrainz IDs are converted; the rest are listed as "needs tagging".
+    public var requireMusicBrainz: Bool = true
+    /// Mirror folders/files named from tags (Album Artist/Album (Year)/NN Title) instead of mirroring source folder names.
+    public var tagDerivedPaths: Bool = true
+
     // Output
     public var profileID: String = "ipod-classic"
     public var artMaxPixels: Int = 600
@@ -108,6 +114,8 @@ public struct Settings: Codable, Equatable, Sendable {
         web = try c.decodeIfPresent(WebSettings.self, forKey: .web) ?? d.web
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
         setupCompleted = try c.decodeIfPresent(Bool.self, forKey: .setupCompleted) ?? d.setupCompleted
+        requireMusicBrainz = try c.decodeIfPresent(Bool.self, forKey: .requireMusicBrainz) ?? d.requireMusicBrainz
+        tagDerivedPaths = try c.decodeIfPresent(Bool.self, forKey: .tagDerivedPaths) ?? d.tagDerivedPaths
     }
 
     // MARK: Persistence

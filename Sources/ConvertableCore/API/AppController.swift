@@ -254,6 +254,7 @@ public actor AppController {
         case let .dismiss(id): try store.setProposalState(id, "dismissed")
         case .indexLegacy: indexLegacy()
         case .scanDeadEntries: scanDeadEntries()
+        case .auditTags: auditTags()
         }
         await publishStatus()
     }
@@ -293,8 +294,31 @@ public actor AppController {
         await bus.publish(.scanProgress(dirs: p.dirs, files: p.files, artist: p.currentArtist))
     }
 
+    private var auditTask: Task<Void, Never>?
+
+    /// Reads tags of new/changed files (MusicBrainz presence, names, path fields), then re-paths mirrored
+    /// albums whose tags now allow a tag-derived name. Background; share I/O through ShareIO.
+    public func auditTags() {
+        guard auditTask == nil else { return }
+        let audit = TagAudit(store: store, sourceRoot: settings.sourceRoot)
+        let io = shareIO, mirror = settings.mirrorRoot, derived = settings.tagDerivedPaths, profileID = settings.profileID
+        auditTask = Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+            if let r = try? await audit.run(shareIO: io), r.audited + r.failed > 0 {
+                try? self.store.log("info", "tags", "tag audit: \(r.audited) files read, \(r.withMBID) with MusicBrainz IDs, \(r.failed) unreadable")
+            }
+            if derived, let profile = Profile.named(profileID) {
+                let moved = await Reviewer(store: self.store, mirrorRoot: mirror).repathMirror(profile: profile, shareIO: io)
+                if moved > 0 { try? self.store.log("info", "tags", "renamed \(moved) mirror files to tag-derived paths") }
+            }
+            await self.auditFinished()
+        }
+    }
+    private func auditFinished() async { auditTask = nil; backlogCache = nil; await publishStatus(); importIntoMusic() }
+
     private func scanFinished() async {
         scanTask = nil; scanProgressText = nil
+        auditTags()
         // Review pass after every scan: withdraw proposals whose sources came back, propose new orphans.
         let reviewer = Reviewer(store: store, mirrorRoot: settings.mirrorRoot)
         _ = try? reviewer.withdrawStaleProposals()
@@ -313,7 +337,7 @@ public actor AppController {
         var sel = selection
         if exceedCap { sel.cap = nil }
         guard let profile = Profile.named(settings.profileID) else { return }
-        let planner = Planner(store: store, profile: profile, fileSettleSeconds: settings.fileSettleSeconds, albumSettleSeconds: settings.albumSettleSeconds)
+        let planner = makePlanner(profile)
         guard let plan = try? planner.plan(sel), !plan.albums.isEmpty else { return }
         guard case .available = VolumeGate.check(root: settings.sourceRoot, timeout: 15) else { return }
 
@@ -405,7 +429,8 @@ public actor AppController {
                               musicLibraryOpen: MusicPrefs.isConfiguredLibraryOpen(settings), musicRunning: MusicPrefs.isRunning,
                               batch: batch,
                               library: LibraryCounts(artists: c.artists, albums: c.albums, tracks: c.active, lossless: c.lossless, lossy: c.lossy, bytes: c.bytes,
-                                                     mirrored: c.mirrored, missing: c.missing, backlogAlbums: backlog.albums, backlogBytes: backlog.bytes, settlingAlbums: backlog.settling),
+                                                     mirrored: c.mirrored, missing: c.missing, backlogAlbums: backlog.albums, backlogBytes: backlog.bytes, settlingAlbums: backlog.settling,
+                                                     needsTaggingAlbums: backlog.needsTagging, needsTaggingTracks: backlog.needsTaggingTracks, auditingAlbums: backlog.auditing),
                               lastFullScan: (try? store.lastFinishedScan(.full))?.finishedAt,
                               lastIncrementalScan: (try? store.lastFinishedScan(.incremental))?.finishedAt,
                               nextScan: nextScanAt?.timeIntervalSince1970, scanInProgress: scanProgressText,
@@ -424,29 +449,33 @@ public actor AppController {
         return FileManager.default.fileExists(atPath: root) ? .available(VolumeGate.mountInfo(containing: root) ?? MountInfo(mountPoint: "/", fsType: "local", mountedFrom: "")) : .pathMissing(root)
     }
 
-    private var backlogCache: (at: Double, value: (albums: Int, bytes: Int64, settling: Int))?
+    private var backlogCache: (at: Double, value: (albums: Int, bytes: Int64, settling: Int, needsTagging: Int, needsTaggingTracks: Int, auditing: Int))?
 
     /// Cheap backlog figures from the album summaries (one query), cached briefly. The planner's exact
     /// per-track plan is only run when a batch is previewed or started.
-    private func backlogSummary() -> (albums: Int, bytes: Int64, settling: Int) {
+    private func backlogSummary() -> (albums: Int, bytes: Int64, settling: Int, needsTagging: Int, needsTaggingTracks: Int, auditing: Int) {
         let now = Date().timeIntervalSince1970
         if let c = backlogCache, now - c.at < 10 { return c.value }
-        guard let summaries = try? store.albumSummaries() else { return (0, 0, 0) }
-        var albums = 0, settling = 0; var bytes: Int64 = 0
+        guard let summaries = try? store.albumSummaries() else { return (0, 0, 0, 0, 0, 0) }
+        var albums = 0, settling = 0, needsTagging = 0, needsTaggingTracks = 0, auditing = 0; var bytes: Int64 = 0
         for s in summaries where s.mirrored < s.tracks || s.stale > 0 {
+            if settings.requireMusicBrainz {
+                if s.untagged > 0 { needsTagging += 1; needsTaggingTracks += s.untagged; continue }
+                if s.unaudited > 0 { auditing += 1; continue }
+            }
             let wait = Double(max(settings.fileSettleSeconds, settings.albumSettleSeconds)) - (now - s.lastChange)
             if s.minObservations < 2 || wait > 0 { settling += 1; continue }
             albums += 1
             bytes += s.tracks > 0 ? Int64(Double(s.bytes) * Double(s.tracks - s.mirrored) / Double(s.tracks)) : 0
         }
-        let value = (albums, bytes, settling)
+        let value = (albums, bytes, settling, needsTagging, needsTaggingTracks, auditing)
         backlogCache = (now, value)
         return value
     }
 
     public func artists() -> [ArtistRow] {
         ((try? store.artistSummaries()) ?? []).map {
-            ArtistRow(dir: $0.artistDir, name: $0.displayName, albums: $0.albums, tracks: $0.tracks, bytes: $0.bytes, mirrored: $0.mirrored, pinned: $0.pinned, status: $0.status)
+            ArtistRow(dir: $0.artistDir, name: $0.displayName, albums: $0.albums, tracks: $0.tracks, bytes: $0.bytes, mirrored: $0.mirrored, pinned: $0.pinned, status: $0.status, untagged: $0.untagged)
         }
     }
 
@@ -454,13 +483,18 @@ public actor AppController {
         ((try? store.albumSummaries(artist: artist)) ?? []).map {
             AlbumRow(artistDir: $0.key.artistDir, albumDir: $0.key.albumDir, name: $0.displayAlbum ?? ($0.key.albumDir.isEmpty ? "(loose files)" : $0.key.albumDir),
                      tracks: $0.tracks, bytes: $0.bytes, mirrored: $0.mirrored, lossless: $0.losslessTracks, lossy: $0.lossyTracks,
-                     status: $0.mirrored == 0 ? "none" : ($0.mirrored == $0.tracks ? "complete" : "partial"), firstSeen: $0.firstSeen)
+                     status: $0.mirrored == 0 ? "none" : ($0.mirrored == $0.tracks ? "complete" : "partial"), firstSeen: $0.firstSeen, untagged: $0.untagged, unaudited: $0.unaudited)
         }
+    }
+
+    func makePlanner(_ profile: Profile) -> Planner {
+        Planner(store: store, profile: profile, fileSettleSeconds: settings.fileSettleSeconds, albumSettleSeconds: settings.albumSettleSeconds,
+                requireMusicBrainz: settings.requireMusicBrainz, tagDerivedPaths: settings.tagDerivedPaths)
     }
 
     public func preview(_ selection: Selection) throws -> PlanPreview {
         guard let profile = Profile.named(settings.profileID) else { throw CocoaError(.featureUnsupported) }
-        let planner = Planner(store: store, profile: profile, fileSettleSeconds: settings.fileSettleSeconds, albumSettleSeconds: settings.albumSettleSeconds)
+        let planner = makePlanner(profile)
         let plan = try planner.plan(selection)
         func row(_ a: PlannedAlbum) -> PlanPreview.Album {
             var est = a.estimatedOutBytes
@@ -480,7 +514,9 @@ public actor AppController {
                            overflowBytes: plan.overflowBytes, backlogAlbums: plan.backlogAlbums, backlogBytes: plan.backlogBytes,
                            settling: plan.ineligible.filter { if case .settling = $0.1 { return true }; return false }.count,
                            alreadyMirrored: plan.ineligible.filter { $0.1 == .nothingToDo }.count,
-                           skipped: plan.ineligible.filter { $0.1 == .allSkipped }.count, estimatedSeconds: seconds)
+                           skipped: plan.ineligible.filter { $0.1 == .allSkipped }.count,
+                           needsTagging: plan.ineligible.filter { if case .needsTagging = $0.1 { return true }; return false }.count,
+                           auditing: plan.ineligible.filter { $0.1 == .auditing }.count, estimatedSeconds: seconds)
     }
 
     public func batches(limit: Int = 50) -> [BatchRow] {
