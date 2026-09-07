@@ -277,7 +277,9 @@ public actor AppController {
             }
             do {
                 let p = full ? try scanner.fullScan() : try scanner.incrementalScan()
-                try? self.store.log("info", "scan", "\(full ? "full" : "incremental") scan: \(p.files) files, +\(p.added) ~\(p.changed) −\(p.missing)")
+                // Routine scans are noise at info level; anything that actually changed is still surfaced.
+                let changed = p.added + p.changed + p.missing + p.reappeared
+                try? self.store.log(changed > 0 ? "info" : "debug", "scan", "\(full ? "full" : "incremental") scan: \(p.files) files, +\(p.added) ~\(p.changed) −\(p.missing)")
             } catch {
                 try? self.store.log("error", "scan", "\(error)")
                 await self.raise(Alert(id: "scan", level: "error", message: "Scan failed: \(error)", action: nil))
@@ -497,6 +499,7 @@ public actor AppController {
         var sql = "SELECT id, at, level, category, message, rel_path FROM activity WHERE 1=1"
         var params: [Database.Value] = []
         if let level, level != "all" { sql += " AND level=?"; params.append(.text(level)) }
+        else { sql += " AND level != 'debug'" }   // routine chatter only on request
         if let search, !search.isEmpty { sql += " AND (message LIKE ? OR rel_path LIKE ?)"; params += [.text("%\(search)%"), .text("%\(search)%")] }
         sql += " ORDER BY id DESC LIMIT ?"; params.append(.integer(Int64(limit)))
         return (try? store.db.query(sql, params) { r in
