@@ -475,7 +475,7 @@ public actor AppController {
 
     public func artists() -> [ArtistRow] {
         ((try? store.artistSummaries()) ?? []).map {
-            ArtistRow(dir: $0.artistDir, name: $0.displayName, albums: $0.albums, tracks: $0.tracks, bytes: $0.bytes, mirrored: $0.mirrored, pinned: $0.pinned, status: $0.status, untagged: $0.untagged)
+            ArtistRow(dir: $0.artistDir, name: $0.displayName, albums: $0.albums, tracks: $0.tracks, bytes: $0.bytes, mirrored: $0.mirrored, pinned: $0.pinned, status: $0.status, untagged: $0.untagged, stale: $0.stale)
         }
     }
 
@@ -483,7 +483,7 @@ public actor AppController {
         ((try? store.albumSummaries(artist: artist)) ?? []).map {
             AlbumRow(artistDir: $0.key.artistDir, albumDir: $0.key.albumDir, name: $0.displayAlbum ?? ($0.key.albumDir.isEmpty ? "(loose files)" : $0.key.albumDir),
                      tracks: $0.tracks, bytes: $0.bytes, mirrored: $0.mirrored, lossless: $0.losslessTracks, lossy: $0.lossyTracks,
-                     status: $0.mirrored == 0 ? "none" : ($0.mirrored == $0.tracks ? "complete" : "partial"), firstSeen: $0.firstSeen, untagged: $0.untagged, unaudited: $0.unaudited)
+                     status: $0.mirrored == 0 ? "none" : ($0.mirrored == $0.tracks ? "complete" : "partial"), firstSeen: $0.firstSeen, untagged: $0.untagged, unaudited: $0.unaudited, stale: $0.stale)
         }
     }
 

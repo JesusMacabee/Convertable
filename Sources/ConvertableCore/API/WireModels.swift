@@ -62,11 +62,15 @@ public struct LibraryCounts: Codable, Equatable, Sendable {
 public struct ArtistRow: Codable, Equatable, Sendable {
     public var dir: String, name: String, albums: Int, tracks: Int, bytes: Int64, mirrored: Int, pinned: Bool, status: String
     public var untagged: Int = 0
+    public var stale: Int = 0          // mirrored tracks whose source changed or whose tag policy is outdated
+    /// Fully mirrored and up to date: nothing left to convert, so the dashboard greys it out.
+    public var done: Bool { status == "complete" && stale == 0 }
 }
 
 public struct AlbumRow: Codable, Equatable, Sendable {
     public var artistDir: String, albumDir: String, name: String, tracks: Int, bytes: Int64, mirrored: Int, lossless: Int, lossy: Int, status: String, firstSeen: Double
-    public var untagged: Int = 0, unaudited: Int = 0
+    public var untagged: Int = 0, unaudited: Int = 0, stale: Int = 0
+    public var done: Bool { status == "complete" && stale == 0 }
 }
 
 public struct PlanPreview: Codable, Equatable, Sendable {

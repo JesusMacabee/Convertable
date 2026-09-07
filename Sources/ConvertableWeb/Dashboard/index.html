@@ -62,6 +62,8 @@ tr.album td:first-child { padding-left: 42px; }
 .star { cursor: pointer; color: var(--line); font-size: 16px; line-height: 1; }
 .star.on { color: var(--pin); }
 .status-none { color: var(--muted); } .status-partial { color: var(--warn); } .status-complete { color: var(--ok); }
+tr.done td { opacity: .45; } tr.done td.status-complete { opacity: .8; }
+tr.done input[type=checkbox] { cursor: not-allowed; }
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .seg button { border: none; border-radius: 0; padding: 6px 12px; }
@@ -351,18 +353,20 @@ function renderArtists() {
   const tb = $('#artistTable tbody');
   tb.innerHTML = rows.map(a => {
     const dis = mode !== 'artists' ? 'disabled' : '';
+    const done = a.status === 'complete' && !a.stale;   // fully mirrored and current: nothing to queue
+    if (done) selArtists.delete(a.dir);
     const partialSel = !selArtists.has(a.dir) && [...selAlbums].some(k => k.startsWith(a.dir + ' '));
-    return `<tr data-dir="${esc(a.dir)}">
-      <td><input type="checkbox" ${dis} ${selArtists.has(a.dir) ? 'checked' : ''} ${partialSel ? 'data-partial=1' : ''} data-art="${esc(a.dir)}"></td>
+    return `<tr data-dir="${esc(a.dir)}" class="${done ? 'done' : ''}">
+      <td><input type="checkbox" ${dis} ${done ? 'disabled title="Already mirrored"' : ''} ${selArtists.has(a.dir) ? 'checked' : ''} ${partialSel ? 'data-partial=1' : ''} data-art="${esc(a.dir)}"></td>
       <td><span class="star ${a.pinned ? 'on' : ''}" data-pin="${esc(a.dir)}" title="Pin: always queue first">★</span></td>
       <td><a href="#" data-expand="${esc(a.dir)}">${expanded.has(a.dir) ? '▾' : '▸'} ${esc(a.name)}</a>${a.name !== a.dir ? ` <span class="sub">${esc(a.dir)}</span>` : ''}</td>
       <td class="num">${a.albums}</td><td class="num">${a.tracks}</td><td class="num">${fmtBytes(a.bytes)}</td>
-      <td class="status-${a.status}">${a.status === 'none' ? '—' : a.status === 'complete' ? '✓ complete' : `${a.mirrored}/${a.tracks}`}${a.untagged ? ` <span class="chip" title="tracks without MusicBrainz IDs — held back until tagged">${a.untagged} untagged</span>` : ''}</td></tr>` +
-      (expanded.has(a.dir) ? (albumsCache[a.dir] || []).map(al => { const key = a.dir + ' ' + al.albumDir; return `<tr class="album" data-dir="${esc(a.dir)}">
-        <td><input type="checkbox" ${dis} ${selAlbums.has(key) || selArtists.has(a.dir) ? 'checked' : ''} ${selArtists.has(a.dir) ? 'disabled' : ''} data-alb="${esc(a.dir)}" data-albdir="${esc(al.albumDir)}"></td><td></td>
+      <td class="status-${a.status}">${a.status === 'none' ? '—' : a.status === 'complete' ? '✓ complete' : `${a.mirrored}/${a.tracks}`}${a.stale ? ` <span class="chip" title="mirrored, but the source or tag policy changed — queue to re-sync">${a.stale} stale</span>` : ''}${a.untagged ? ` <span class="chip" title="tracks without MusicBrainz IDs — held back until tagged">${a.untagged} untagged</span>` : ''}</td></tr>` +
+      (expanded.has(a.dir) ? (albumsCache[a.dir] || []).map(al => { const key = a.dir + ' ' + al.albumDir; const adone = al.status === 'complete' && !al.stale; if (adone) selAlbums.delete(key); return `<tr class="album ${adone ? 'done' : ''}" data-dir="${esc(a.dir)}">
+        <td><input type="checkbox" ${dis} ${adone ? 'disabled title="Already mirrored"' : ''} ${!adone && (selAlbums.has(key) || selArtists.has(a.dir)) ? 'checked' : ''} ${selArtists.has(a.dir) ? 'disabled' : ''} data-alb="${esc(a.dir)}" data-albdir="${esc(al.albumDir)}"></td><td></td>
         <td>${esc(al.name)} <span class="sub">${al.lossless ? al.lossless + ' lossless' : ''}${al.lossy ? (al.lossless ? ' · ' : '') + al.lossy + ' copy-through' : ''}</span></td>
         <td></td><td class="num">${al.tracks}</td><td class="num">${fmtBytes(al.bytes)}</td>
-        <td class="status-${al.status}">${al.status === 'none' ? '—' : al.status === 'complete' ? '✓' : `${al.mirrored}/${al.tracks}`}${al.untagged ? ` <span class="chip">needs tags</span>` : (al.unaudited ? ' <span class="chip">auditing</span>' : '')}</td></tr>`; }).join('') : '');
+        <td class="status-${al.status}">${al.status === 'none' ? '—' : al.status === 'complete' ? '✓' : `${al.mirrored}/${al.tracks}`}${al.stale ? ` <span class="chip" title="source or tag policy changed — queue to re-sync">${al.stale} stale</span>` : ''}${al.untagged ? ` <span class="chip">needs tags</span>` : (al.unaudited ? ' <span class="chip">auditing</span>' : '')}</td></tr>`; }).join('') : '');
   }).join('') || '<tr><td colspan="7" class="empty">No artists match.</td></tr>';
   $$('input[data-partial]', tb).forEach(c => c.indeterminate = true);
   $$('[data-expand]', tb).forEach(a => a.onclick = async e => { e.preventDefault(); const d = a.dataset.expand; if (expanded.has(d)) expanded.delete(d); else { expanded.add(d); if (!albumsCache[d]) albumsCache[d] = await api('/albums?artist=' + encodeURIComponent(d)); } renderArtists(); });
@@ -377,7 +381,7 @@ function currentSelection() {
   if (selArtists.size && !selAlbums.size) return { mode: { artists: { _0: [...selArtists] } }, cap, ignoreSettle: false };
   // Mixed or album-only selections become an album list.
   const keys = [...selAlbums].map(k => { const [artistDir, albumDir] = k.split(' '); return { artistDir, albumDir }; });
-  for (const a of selArtists) for (const al of (albumsCache[a] || [])) keys.push({ artistDir: a, albumDir: al.albumDir });
+  for (const a of selArtists) for (const al of (albumsCache[a] || [])) if (!(al.status === 'complete' && !al.stale)) keys.push({ artistDir: a, albumDir: al.albumDir });
   return { mode: { albums: { _0: keys } }, cap, ignoreSettle: false };
 }
 const drawer = { open() { $('#drawer').classList.add('open'); $('#scrim').hidden = false; }, close() { $('#drawer').classList.remove('open'); $('#scrim').hidden = true; } };

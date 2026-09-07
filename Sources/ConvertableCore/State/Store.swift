@@ -365,6 +365,7 @@ public final class Store: @unchecked Sendable {
         public var mirrored: Int
         public var pinned: Bool
         public var untagged: Int = 0
+        public var stale: Int = 0
         public var status: String { mirrored == 0 ? "none" : (mirrored == tracks ? "complete" : "partial") }
     }
 
@@ -373,7 +374,8 @@ public final class Store: @unchecked Sendable {
         return try db.query("""
             SELECT s.artist_dir, COUNT(DISTINCT s.album_dir) albums, COUNT(*) tracks, SUM(s.size) bytes,
                    SUM(CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END) mirrored,
-                   SUM(CASE WHEN s.has_mbid = 0 THEN 1 ELSE 0 END) untagged
+                   SUM(CASE WHEN s.has_mbid = 0 THEN 1 ELSE 0 END) untagged,
+                   SUM(CASE WHEN o.id IS NOT NULL AND ((COALESCE(o.tags_written_at, o.encoded_at) IS NOT NULL AND s.stable_since > COALESCE(o.tags_written_at, o.encoded_at)) OR o.tag_policy < \(TagPolicy.version)) THEN 1 ELSE 0 END) stale
             FROM source_files s
             LEFT JOIN outputs o ON o.source_id = s.id AND o.verify_ok = 1
             WHERE s.status='active' AND s.kind != 'other'
@@ -383,7 +385,7 @@ public final class Store: @unchecked Sendable {
             // The artist folder is the unit the user picks and the mirror keeps, so it is also the display name (album-artist
             // tags vary per album: collaborations, mis-filed albums) and the sort key.
             return ArtistSummary(artistDir: dir, displayName: dir, albums: Int(r.int(1)!), tracks: Int(r.int(2)!),
-                                 bytes: r.int(3)!, mirrored: Int(r.int(4)!), pinned: pins.contains(dir), untagged: Int(r.int(5) ?? 0))
+                                 bytes: r.int(3)!, mirrored: Int(r.int(4)!), pinned: pins.contains(dir), untagged: Int(r.int(5) ?? 0), stale: Int(r.int(6) ?? 0))
         }
     }
 
