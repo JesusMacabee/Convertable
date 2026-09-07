@@ -29,6 +29,24 @@ final class TagPathTests: XCTestCase {
         XCTAssertEqual(try TagPaths.outputRelPath(for: a2, outputExt: ".m4a", store: store), "Pink Floyd/The Final Cut (1983)/02 Your Possible Pasts.m4a", "same release → same folder")
         XCTAssertNil(try TagPaths.outputRelPath(for: file(4, artist: "X", album: "Y", mbid: nil, year: nil, title: "t", track: 1, hasMBID: false), outputExt: ".m4a", store: store), "no IDs → no tag-derived path")
     }
+    func testArtistLevelFollowsSourceFolderNotAlbumArtistTag() throws {
+        let store = try Store.inMemory()
+        var f = file(1, artist: "21 Savage", album: "Savage Mode II", mbid: "rel-S", year: 2020, title: "Runnin", track: 3)
+        f.tagAlbumArtist = "21 Savage & Metro Boomin"
+        XCTAssertEqual(try TagPaths.outputRelPath(for: f, outputExt: ".m4a", store: store), "21 Savage/Savage Mode II (2020)/03 Runnin.m4a")
+        var g = file(2, artist: "Boston", album: "Born to Run", mbid: "rel-B", year: 1975, title: "Thunder Road", track: 1)
+        g.tagAlbumArtist = "Bruce Springsteen"
+        XCTAssertEqual(try TagPaths.outputRelPath(for: g, outputExt: ".m4a", store: store), "Boston/Born to Run (1975)/01 Thunder Road.m4a", "mis-filed album stays in the folder the user put it in")
+    }
+    func testAlbumFolderRegistryFollowsRenamedPreference() throws {
+        let store = try Store.inMemory()
+        XCTAssertEqual(try store.albumFolder(releaseKey: "release:A", preferred: "Old Artist/Album (2001)"), "Old Artist/Album (2001)")
+        XCTAssertEqual(try store.albumFolder(releaseKey: "release:A", preferred: "Old Artist/Album (2001)"), "Old Artist/Album (2001)", "stable while unchanged")
+        XCTAssertEqual(try store.albumFolder(releaseKey: "release:B", preferred: "Old Artist/Album (2001)"), "Old Artist/Album (2001) [2]")
+        XCTAssertEqual(try store.albumFolder(releaseKey: "release:B", preferred: "Old Artist/Album (2001)"), "Old Artist/Album (2001) [2]", "collision suffix is stable")
+        XCTAssertEqual(try store.albumFolder(releaseKey: "release:A", preferred: "Folder/Album (2001)"), "Folder/Album (2001)", "preferred name changed → re-registered")
+        XCTAssertEqual(try store.albumFolder(releaseKey: "release:C", preferred: "Old Artist/Album (2001)"), "Old Artist/Album (2001)", "the vacated name is free again")
+    }
     func testPlannerHoldsUntaggedAlbums() throws {
         let store = try Store.inMemory()
         func insert(_ artist: String, _ album: String, _ n: Int, mbid: Int?) throws {
@@ -80,9 +98,10 @@ final class RepathTests: XCTestCase {
         try Data("x".utf8).write(to: URL(fileURLWithPath: old))
         let moved = await Reviewer(store: store, mirrorRoot: mirror.path).repathMirror(profile: .ipodClassic, shareIO: ShareIO(limit: 1))
         XCTAssertEqual(moved, 1)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: mirror.appendingPathComponent("Pink Floyd/Meddle (1971)/01 One of These Days.m4a").path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: mirror.appendingPathComponent("Scene-Dir").path), "empty old folders removed")
-        XCTAssertEqual(try store.db.scalar("SELECT rel_path FROM outputs"), .text("Pink Floyd/Meddle (1971)/01 One of These Days.m4a"))
+        // Artist level stays the source folder; album folder and file name come from tags.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: mirror.appendingPathComponent("Scene-Dir/Meddle (1971)/01 One of These Days.m4a").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mirror.appendingPathComponent("Scene-Dir/Scene-Album-FLAC").path), "empty old album folder removed")
+        XCTAssertEqual(try store.db.scalar("SELECT rel_path FROM outputs"), .text("Scene-Dir/Meddle (1971)/01 One of These Days.m4a"))
         XCTAssertEqual(try store.db.scalar("SELECT music_relocate_pending FROM outputs"), .integer(1))
         let again = await Reviewer(store: store, mirrorRoot: mirror.path).repathMirror(profile: .ipodClassic, shareIO: ShareIO(limit: 1))
         XCTAssertEqual(again, 0, "idempotent")

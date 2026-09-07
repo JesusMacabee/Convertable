@@ -52,12 +52,14 @@ public enum TagPaths {
         return t.isEmpty ? "Unknown" : t
     }
 
-    /// Preferred album folder (before collision handling): `Album Artist/Album (Year)`.
-    public static func albumFolder(albumArtist: String?, album: String?, year: Int?) -> String {
-        let artist = sanitize(albumArtist ?? "Unknown Artist")
+    /// Preferred album folder (before collision handling): `<source artist folder>/Album (Year)`.
+    /// The artist level mirrors the source folder verbatim — that folder is the user's organisational choice and the unit
+    /// the Convert tab selects; album-artist tags vary per album (collaborations, mis-filed albums) and would scatter one
+    /// artist's albums across several mirror folders.
+    public static func albumFolder(artistFolder: String, album: String?, year: Int?) -> String {
         var alb = sanitize(album ?? "Unknown Album")
         if let year { alb += " (\(year))" }
-        return artist + "/" + alb
+        return artistFolder + "/" + alb
     }
 
     /// File name within the album folder.
@@ -72,7 +74,7 @@ public enum TagPaths {
     /// Full relative output path for a source file, or nil when the tags are not trustworthy enough.
     public static func outputRelPath(for f: SourceFile, outputExt: String, store: Store) throws -> String? {
         guard f.hasMBID == true else { return nil }
-        let preferred = albumFolder(albumArtist: f.tagAlbumArtist ?? f.tagArtist, album: f.tagAlbum, year: f.tagYear)
+        let preferred = albumFolder(artistFolder: f.artistDir, album: f.tagAlbum, year: f.tagYear)
         let key = f.mbidRelease.map { "release:" + $0 } ?? "dirs:" + f.artistDir + "/" + f.albumDir
         let folder = try store.albumFolder(releaseKey: key, preferred: preferred)
         return folder + "/" + fileName(title: f.tagTitle, track: f.tagTrack, disc: f.tagDisc, discTotal: f.tagDiscTotal, ext: outputExt, fallbackStem: f.stem)

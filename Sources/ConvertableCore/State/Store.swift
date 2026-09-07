@@ -194,10 +194,17 @@ public final class Store: @unchecked Sendable {
 
     /// Deterministic folder for a release: first come, first served; a different release that would collide gets " [2]".
     public func albumFolder(releaseKey: String, preferred: String, now: Double = Date().timeIntervalSince1970) throws -> String {
-        if case let .text(f)? = try db.scalar("SELECT folder FROM album_folders WHERE release_key=?", [.text(releaseKey)]) { return f }
+        let existing: String? = { if case let .text(f)? = try? db.scalar("SELECT folder FROM album_folders WHERE release_key=?", [.text(releaseKey)]) { return f }; return nil }()
+        // A registered folder stays put while it is still the preferred name (or a collision variant of it), so suffixes are stable.
+        // When the preferred name itself changes (naming policy, retagged album) the release is re-registered under the new name.
+        if let existing, existing == preferred || (existing.hasPrefix(preferred + " [") && existing.hasSuffix("]")) { return existing }
         var candidate = preferred; var n = 2
-        while try db.scalar("SELECT COUNT(*) FROM album_folders WHERE folder=?", [.text(candidate)]) != .integer(0) { candidate = preferred + " [\(n)]"; n += 1 }
-        try db.run("INSERT INTO album_folders (release_key, folder, created_at) VALUES (?,?,?)", [.text(releaseKey), .text(candidate), .real(now)])
+        while try db.scalar("SELECT COUNT(*) FROM album_folders WHERE folder=? AND release_key<>?", [.text(candidate), .text(releaseKey)]) != .integer(0) { candidate = preferred + " [\(n)]"; n += 1 }
+        if existing != nil {
+            try db.run("UPDATE album_folders SET folder=? WHERE release_key=?", [.text(candidate), .text(releaseKey)])
+        } else {
+            try db.run("INSERT INTO album_folders (release_key, folder, created_at) VALUES (?,?,?)", [.text(releaseKey), .text(candidate), .real(now)])
+        }
         return candidate
     }
 
@@ -365,7 +372,7 @@ public final class Store: @unchecked Sendable {
         let pins = try pinnedArtists()
         return try db.query("""
             SELECT s.artist_dir, COUNT(DISTINCT s.album_dir) albums, COUNT(*) tracks, SUM(s.size) bytes,
-                   SUM(CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END) mirrored, MAX(s.tag_albumartist) tag_aa,
+                   SUM(CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END) mirrored,
                    SUM(CASE WHEN s.has_mbid = 0 THEN 1 ELSE 0 END) untagged
             FROM source_files s
             LEFT JOIN outputs o ON o.source_id = s.id AND o.verify_ok = 1
@@ -373,8 +380,10 @@ public final class Store: @unchecked Sendable {
             GROUP BY s.artist_dir ORDER BY s.artist_dir COLLATE NOCASE
             """) { r in
             let dir = r.text(0)!
-            return ArtistSummary(artistDir: dir, displayName: r.text(5) ?? dir, albums: Int(r.int(1)!), tracks: Int(r.int(2)!),
-                                 bytes: r.int(3)!, mirrored: Int(r.int(4)!), pinned: pins.contains(dir), untagged: Int(r.int(6) ?? 0))
+            // The artist folder is the unit the user picks and the mirror keeps, so it is also the display name (album-artist
+            // tags vary per album: collaborations, mis-filed albums) and the sort key.
+            return ArtistSummary(artistDir: dir, displayName: dir, albums: Int(r.int(1)!), tracks: Int(r.int(2)!),
+                                 bytes: r.int(3)!, mirrored: Int(r.int(4)!), pinned: pins.contains(dir), untagged: Int(r.int(5) ?? 0))
         }
     }
 

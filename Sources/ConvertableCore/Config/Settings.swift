@@ -70,7 +70,8 @@ public struct Settings: Codable, Equatable, Sendable {
     // Tag policy
     /// Only albums whose every track carries MusicBrainz IDs are converted; the rest are listed as "needs tagging".
     public var requireMusicBrainz: Bool = true
-    /// Mirror folders/files named from tags (Album Artist/Album (Year)/NN Title) instead of mirroring source folder names.
+    /// Mirror album folders and file names from tags (`<source artist folder>/Album (Year)/NN Title`) instead of copying
+    /// the source album folder and file names. The artist folder always mirrors the source.
     public var tagDerivedPaths: Bool = true
 
     // Output
