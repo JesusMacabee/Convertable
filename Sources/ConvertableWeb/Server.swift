@@ -88,6 +88,12 @@ public struct WebServer: Sendable {
             try await self.controller.perform(.approve(id: b.id))
             return try self.json(await self.controller.proposals())
         }
+        api.post("proposals/approve-all") { req, ctx in
+            struct Body: Decodable { var kind: String }
+            let b = try await req.decode(as: Body.self, context: ctx)
+            _ = try await self.controller.approveAll(kind: b.kind)
+            return try self.json(await self.controller.proposals())
+        }
         api.post("proposals/dismiss") { req, ctx in
             struct Body: Decodable { var id: Int64 }
             let b = try await req.decode(as: Body.self, context: ctx)

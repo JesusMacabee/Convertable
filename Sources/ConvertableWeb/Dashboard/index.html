@@ -440,13 +440,24 @@ async function loadProposals() {
   const rows = await api('/proposals');
   const el = $('#proposals');
   if (!rows.length) { el.innerHTML = '<div class="card empty">No proposals. The mirror matches the source library.</div>'; return; }
-  el.innerHTML = rows.map(p => `<div class="card" style="margin-bottom:12px">
+  const labels = { remove: 'removal', supersede: 'supersede', dead: 'dead-entry' };
+  const pendingByKind = {};
+  for (const p of rows) if (p.state === 'pending') pendingByKind[p.kind] = (pendingByKind[p.kind] || 0) + 1;
+  const bulk = Object.entries(pendingByKind).filter(([, n]) => n > 1).map(([k, n]) => `<button data-approve-all="${k}">Approve all ${n} ${labels[k] || k} proposals</button>`).join('');
+  el.innerHTML = (bulk ? `<div class="row" style="margin-bottom:12px">${bulk}<span class="hint">Each kind is approved separately; you'll be asked to confirm.</span></div>` : '') + rows.map(p => `<div class="card" style="margin-bottom:12px">
     <div class="row"><b>${esc(p.kind === 'remove' ? 'Remove' : p.kind === 'dead' ? 'Dead entries' : 'Supersede')}</b> · <span>${esc(p.artistDir)}${p.albumDir ? ' — ' + esc(p.albumDir) : ''}</span><span class="chip">${p.items.length} files · ${fmtBytes(p.bytes)}</span><span class="chip">${esc(p.state)}</span><span class="sub">${fmtTime(p.createdAt)}</span></div>
     <div style="margin:6px 0"><b>${esc(p.title)}</b><div class="sub">${esc(p.reason)}</div></div>
     <details><summary class="sub">${p.kind === 'dead' ? 'Tracks' : 'Files'}</summary><ul class="sub">${p.items.map(i => `<li>${esc(i.relPath)}${i.musicPersistentID ? ' <span class="chip">in Music</span>' : ''}${i.counterpartPersistentID ? ' <span class="chip">play counts carry over</span>' : ''}</li>`).join('')}</ul></details>
     ${p.state === 'pending' ? `<div class="row" style="margin-top:8px"><button class="primary" data-approve="${p.id}">Approve</button><button data-dismiss="${p.id}">Dismiss</button></div>` : `<div class="sub" style="margin-top:8px">Approved — waiting for the Music library to be open to finish.</div>`}
   </div>`).join('');
   $$('[data-approve]', el).forEach(b => b.onclick = async () => { b.disabled = true; await api('/proposals/approve', { method: 'POST', body: { id: +b.dataset.approve } }); loadProposals(); });
+  $$('[data-approve-all]', el).forEach(b => b.onclick = async () => {
+    const k = b.dataset.approveAll, n = pendingByKind[k];
+    const what = k === 'dead' ? `remove ${n} groups of dead entries from Music (no files are touched)` : k === 'supersede' ? `replace ${n} legacy albums with their mirror copies (legacy files go to quarantine)` : `remove ${n} albums from the mirror (files go to quarantine)`;
+    if (!confirm(`Approve all: ${what}?`)) return;
+    b.disabled = true; b.textContent = 'Approving…';
+    await api('/proposals/approve-all', { method: 'POST', body: { kind: k } }); loadProposals();
+  });
   $$('[data-dismiss]', el).forEach(b => b.onclick = async () => { b.disabled = true; await api('/proposals/dismiss', { method: 'POST', body: { id: +b.dataset.dismiss } }); loadProposals(); });
 }
 

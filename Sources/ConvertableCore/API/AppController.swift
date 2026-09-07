@@ -95,6 +95,13 @@ public actor AppController {
 
     public func proposals() -> [Store.Proposal] { (try? store.proposals(states: ["pending", "approved"])) ?? [] }
 
+    /// Approves every pending proposal of one kind. Returns how many were approved.
+    public func approveAll(kind: String) async throws -> Int {
+        var n = 0
+        for p in try store.proposals(states: ["pending"]) where p.kind == kind { try await approve(p.id); n += 1 }
+        return n
+    }
+
     public func approve(_ id: Int64) async throws {
         guard let p = try store.proposal(id: id), p.state == "pending" else { return }
         try store.setProposalState(id, "approved")
