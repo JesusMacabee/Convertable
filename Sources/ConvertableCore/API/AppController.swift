@@ -422,12 +422,24 @@ public actor AppController {
         return FileManager.default.fileExists(atPath: root) ? .available(VolumeGate.mountInfo(containing: root) ?? MountInfo(mountPoint: "/", fsType: "local", mountedFrom: "")) : .pathMissing(root)
     }
 
+    private var backlogCache: (at: Double, value: (albums: Int, bytes: Int64, settling: Int))?
+
+    /// Cheap backlog figures from the album summaries (one query), cached briefly. The planner's exact
+    /// per-track plan is only run when a batch is previewed or started.
     private func backlogSummary() -> (albums: Int, bytes: Int64, settling: Int) {
-        guard let profile = Profile.named(settings.profileID) else { return (0, 0, 0) }
-        let planner = Planner(store: store, profile: profile, fileSettleSeconds: settings.fileSettleSeconds, albumSettleSeconds: settings.albumSettleSeconds)
-        guard let plan = try? planner.plan(Selection(mode: .everything)) else { return (0, 0, 0) }
-        let settling = plan.ineligible.filter { if case .settling = $0.1 { return true }; return false }.count
-        return (plan.albums.count, plan.bytesIn, settling)
+        let now = Date().timeIntervalSince1970
+        if let c = backlogCache, now - c.at < 10 { return c.value }
+        guard let summaries = try? store.albumSummaries() else { return (0, 0, 0) }
+        var albums = 0, settling = 0; var bytes: Int64 = 0
+        for s in summaries where s.mirrored < s.tracks || s.stale > 0 {
+            let wait = Double(max(settings.fileSettleSeconds, settings.albumSettleSeconds)) - (now - s.lastChange)
+            if s.minObservations < 2 || wait > 0 { settling += 1; continue }
+            albums += 1
+            bytes += s.tracks > 0 ? Int64(Double(s.bytes) * Double(s.tracks - s.mirrored) / Double(s.tracks)) : 0
+        }
+        let value = (albums, bytes, settling)
+        backlogCache = (now, value)
+        return value
     }
 
     public func artists() -> [ArtistRow] {

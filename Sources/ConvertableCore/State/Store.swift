@@ -168,6 +168,14 @@ public final class Store: @unchecked Sendable {
 
     // MARK: Outputs
 
+    /// All outputs for an album's sources in one query (the planner used to ask per track).
+    public func outputs(in album: AlbumKey) throws -> [Int64: OutputFile] {
+        let rows = try db.query("""
+            SELECT o.* FROM outputs o JOIN source_files s ON s.id = o.source_id WHERE s.artist_dir=? AND s.album_dir=?
+            """, [.text(album.artistDir), .text(album.albumDir)], Store.output)
+        return Dictionary(rows.map { ($0.sourceID, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
     public func output(forSource id: Int64) throws -> OutputFile? {
         try db.query("SELECT * FROM outputs WHERE source_id=?", [.integer(id)], Store.output).first
     }

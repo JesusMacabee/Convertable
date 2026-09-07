@@ -46,11 +46,12 @@ public struct Planner {
                 }
             }
             let files = try store.sourceFiles(in: s.key)
+            let outputs = try store.outputs(in: s.key)
             var work: [(SourceFile, Action, OutputFile?)] = []
             for f in files {
                 let a = profile.action(for: f)
                 guard a.isWork else { continue }
-                if let o = try store.output(forSource: f.id), o.verifyOK {
+                if let o = outputs[f.id], o.verifyOK {
                     // Already mirrored; only re-visit if the source changed after the output was written.
                     if o.tagPolicy < TagPolicy.version { work.append((f, a, o)) }
                     else if let written = o.tagsWrittenAt ?? o.encodedAt, f.stableSince > written { work.append((f, a, o)) }
