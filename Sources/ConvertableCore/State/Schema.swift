@@ -208,6 +208,15 @@ public enum Schema {
             created_at  REAL NOT NULL
         );
         """,
+        // v8 — per-album ignore: left out of batches, backlog and needs-tagging counts; mirror copies untouched
+        """
+        CREATE TABLE ignored_albums (
+            artist_dir  TEXT NOT NULL,
+            album_dir   TEXT NOT NULL,
+            ignored_at  REAL NOT NULL,
+            PRIMARY KEY (artist_dir, album_dir)
+        );
+        """,
     ]
 
     public static var currentVersion: Int { migrations.count }

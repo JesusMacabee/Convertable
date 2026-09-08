@@ -38,6 +38,7 @@ public struct Planner {
         var ineligible: [(AlbumKey, Plan.Ineligibility)] = []
 
         for s in summaries {
+            if s.ignored { ineligible.append((s.key, .ignored)); continue }
             guard s.mirrored < s.tracks || s.stale > 0 else { ineligible.append((s.key, .nothingToDo)); continue }
             if requireMusicBrainz {
                 // Whole albums only: a mix of tagged and untagged tracks would split the album across two names.

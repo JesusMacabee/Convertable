@@ -68,6 +68,15 @@ final class TagPathTests: XCTestCase {
         XCTAssertTrue(plan.ineligible.contains { $0.0.artistDir == "Pending" && $0.1 == .auditing })
         let off = Planner(store: store, profile: .ipodClassic, fileSettleSeconds: 0, albumSettleSeconds: 0, requireMusicBrainz: false, tagDerivedPaths: false)
         XCTAssertEqual(try off.plan(Selection(mode: .everything, ignoreSettle: true)).albums.count, 3, "gate off → everything converts under folder names")
+        // Ignoring an album drops it from every plan and from its artist's totals; un-ignoring restores it.
+        try store.ignore(AlbumKey(artistDir: "Untagged", albumDir: "Album"), ignored: true)
+        let ignoredPlan = try planner.plan(Selection(mode: .everything, ignoreSettle: true))
+        XCTAssertTrue(ignoredPlan.ineligible.contains { $0.0.artistDir == "Untagged" && $0.1 == .ignored })
+        XCTAssertFalse(ignoredPlan.ineligible.contains { $0.0.artistDir == "Untagged" && $0.1 != .ignored })
+        XCTAssertFalse(try store.artistSummaries().contains { $0.artistDir == "Untagged" }, "artist with only ignored albums disappears from the artist list")
+        XCTAssertEqual(try store.albumSummaries(artist: "Untagged").first?.ignored, true, "album still listed under its artist, flagged")
+        try store.ignore(AlbumKey(artistDir: "Untagged", albumDir: "Album"), ignored: false)
+        XCTAssertTrue(try planner.plan(Selection(mode: .everything, ignoreSettle: true)).ineligible.contains { $0.0.artistDir == "Untagged" && $0.1 == .needsTagging(untagged: 2) })
     }
     func testAuditRecordsMBIDPresenceOnFixtures() async throws {
         let src = try Fixtures.first("flac", containing: "16BIT")

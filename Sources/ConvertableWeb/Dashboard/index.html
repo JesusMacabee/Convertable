@@ -64,6 +64,8 @@ tr.album td:first-child { padding-left: 42px; }
 .status-none { color: var(--muted); } .status-partial { color: var(--warn); } .status-complete { color: var(--ok); }
 tr.done td { opacity: .45; } tr.done td.status-complete { opacity: .8; }
 tr.done input[type=checkbox] { cursor: not-allowed; }
+tr.ignored td { opacity: .45; } tr.ignored input[type=checkbox] { cursor: not-allowed; }
+.ign { cursor: pointer; color: var(--line); font-size: 15px; line-height: 1; } .ign.on { color: var(--warn); } .ign:hover { color: var(--warn); }
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .seg button { border: none; border-radius: 0; padding: 6px 12px; }
@@ -362,14 +364,16 @@ function renderArtists() {
       <td><a href="#" data-expand="${esc(a.dir)}">${expanded.has(a.dir) ? '▾' : '▸'} ${esc(a.name)}</a>${a.name !== a.dir ? ` <span class="sub">${esc(a.dir)}</span>` : ''}</td>
       <td class="num">${a.albums}</td><td class="num">${a.tracks}</td><td class="num">${fmtBytes(a.bytes)}</td>
       <td class="status-${a.status}">${a.status === 'none' ? '—' : a.status === 'complete' ? '✓ complete' : `${a.mirrored}/${a.tracks}`}${a.stale ? ` <span class="chip" title="mirrored, but the source or tag policy changed — queue to re-sync">${a.stale} stale</span>` : ''}${a.untagged ? ` <span class="chip" title="tracks without MusicBrainz IDs — held back until tagged">${a.untagged} untagged</span>` : ''}</td></tr>` +
-      (expanded.has(a.dir) ? (albumsCache[a.dir] || []).map(al => { const key = a.dir + ' ' + al.albumDir; const adone = al.status === 'complete' && !al.stale; if (adone) selAlbums.delete(key); return `<tr class="album ${adone ? 'done' : ''}" data-dir="${esc(a.dir)}">
-        <td><input type="checkbox" ${dis} ${adone ? 'disabled title="Already mirrored"' : ''} ${!adone && (selAlbums.has(key) || selArtists.has(a.dir)) ? 'checked' : ''} ${selArtists.has(a.dir) ? 'disabled' : ''} data-alb="${esc(a.dir)}" data-albdir="${esc(al.albumDir)}"></td><td></td>
+      (expanded.has(a.dir) ? (albumsCache[a.dir] || []).map(al => { const key = a.dir + ' ' + al.albumDir; const adone = al.status === 'complete' && !al.stale; const ign = !!al.ignored; if (adone || ign) selAlbums.delete(key); return `<tr class="album ${adone ? 'done' : ''} ${ign ? 'ignored' : ''}" data-dir="${esc(a.dir)}">
+        <td><input type="checkbox" ${dis} ${adone ? 'disabled title="Already mirrored"' : ign ? 'disabled title="Ignored"' : ''} ${!adone && !ign && (selAlbums.has(key) || selArtists.has(a.dir)) ? 'checked' : ''} ${selArtists.has(a.dir) ? 'disabled' : ''} data-alb="${esc(a.dir)}" data-albdir="${esc(al.albumDir)}"></td>
+        <td><span class="ign ${ign ? 'on' : ''}" data-ign="${esc(a.dir)}" data-igndir="${esc(al.albumDir)}" title="${ign ? 'Ignored — click to include this album again' : 'Ignore this album: left out of batches, backlog and needs-tagging counts; existing mirror files stay'}">⊘</span></td>
         <td>${esc(al.name)} <span class="sub">${al.lossless ? al.lossless + ' lossless' : ''}${al.lossy ? (al.lossless ? ' · ' : '') + al.lossy + ' copy-through' : ''}</span></td>
         <td></td><td class="num">${al.tracks}</td><td class="num">${fmtBytes(al.bytes)}</td>
-        <td class="status-${al.status}">${al.status === 'none' ? '—' : al.status === 'complete' ? '✓' : `${al.mirrored}/${al.tracks}`}${al.stale ? ` <span class="chip" title="source or tag policy changed — queue to re-sync">${al.stale} stale</span>` : ''}${al.untagged ? ` <span class="chip">needs tags</span>` : (al.unaudited ? ' <span class="chip">auditing</span>' : '')}</td></tr>`; }).join('') : '');
+        <td class="status-${al.status}">${al.ignored ? '<span class="chip">ignored</span> ' : ''}${al.status === 'none' ? '—' : al.status === 'complete' ? '✓' : `${al.mirrored}/${al.tracks}`}${al.stale ? ` <span class="chip" title="source or tag policy changed — queue to re-sync">${al.stale} stale</span>` : ''}${al.untagged ? ` <span class="chip">needs tags</span>` : (al.unaudited ? ' <span class="chip">auditing</span>' : '')}</td></tr>`; }).join('') : '');
   }).join('') || '<tr><td colspan="7" class="empty">No artists match.</td></tr>';
   $$('input[data-partial]', tb).forEach(c => c.indeterminate = true);
   $$('[data-expand]', tb).forEach(a => a.onclick = async e => { e.preventDefault(); const d = a.dataset.expand; if (expanded.has(d)) expanded.delete(d); else { expanded.add(d); if (!albumsCache[d]) albumsCache[d] = await api('/albums?artist=' + encodeURIComponent(d)); } renderArtists(); });
+  $$('[data-ign]', tb).forEach(s => s.onclick = async () => { const d = s.dataset.ign, al = s.dataset.igndir; const cur = (albumsCache[d] || []).find(x => x.albumDir === al); albumsCache[d] = await api('/albums/ignore', { method: 'POST', body: { artistDir: d, albumDir: al, ignored: !(cur && cur.ignored) } }); artists = await api('/artists'); renderArtists(); updateSummary(); renderStatus(await api('/status')); });
   $$('[data-pin]', tb).forEach(s => s.onclick = async () => { const a = artists.find(x => x.dir === s.dataset.pin); artists = await api('/pin', { method: 'POST', body: { artistDir: a.dir, pinned: !a.pinned } }); renderArtists(); });
   $$('input[data-art]', tb).forEach(c => c.onchange = () => { if (c.checked) { selArtists.add(c.dataset.art); [...selAlbums].filter(k => k.startsWith(c.dataset.art + ' ')).forEach(k => selAlbums.delete(k)); } else selArtists.delete(c.dataset.art); renderArtists(); updateSummary(); });
   $$('input[data-alb]', tb).forEach(c => c.onchange = () => { const key = c.dataset.alb + ' ' + c.dataset.albdir; if (c.checked) selAlbums.add(key); else selAlbums.delete(key); renderArtists(); updateSummary(); });
@@ -381,7 +385,7 @@ function currentSelection() {
   if (selArtists.size && !selAlbums.size) return { mode: { artists: { _0: [...selArtists] } }, cap, ignoreSettle: false };
   // Mixed or album-only selections become an album list.
   const keys = [...selAlbums].map(k => { const [artistDir, albumDir] = k.split(' '); return { artistDir, albumDir }; });
-  for (const a of selArtists) for (const al of (albumsCache[a] || [])) if (!(al.status === 'complete' && !al.stale)) keys.push({ artistDir: a, albumDir: al.albumDir });
+  for (const a of selArtists) for (const al of (albumsCache[a] || [])) if (!(al.status === 'complete' && !al.stale) && !al.ignored) keys.push({ artistDir: a, albumDir: al.albumDir });
   return { mode: { albums: { _0: keys } }, cap, ignoreSettle: false };
 }
 const drawer = { open() { $('#drawer').classList.add('open'); $('#scrim').hidden = false; }, close() { $('#drawer').classList.remove('open'); $('#scrim').hidden = true; } };
@@ -427,7 +431,7 @@ $('#btnPreview').onclick = async () => {
     <ul>${p.albums.map(li).join('') || '<li class="sub">Nothing eligible in this selection.</li>'}</ul>
     ${p.overflow.length ? `<div class="alert warn"><span><b>${p.overflow.length} more albums (${fmtBytes(p.overflowBytes)}) are beyond the cap.</b> Convert all ${fmtBytes(p.bytesIn + p.overflowBytes)}, or respect the cap and stop after the list above.</span></div><ul>${p.overflow.map(li).join('')}</ul>` : ''}
     ${p.backlogAlbums ? `<div class="sub">After this batch: ${p.backlogAlbums} albums / ${fmtBytes(p.backlogBytes)} remain in the backlog.</div>` : ''}
-    <div class="sub">Not included: ${p.settling} still settling · ${p.alreadyMirrored} already mirrored · ${p.skipped} skipped by profile${p.needsTagging ? ` · <b>${p.needsTagging} need MusicBrainz tags</b>` : ''}${p.auditing ? ` · ${p.auditing} being audited` : ''}.</div>
+    <div class="sub">Not included: ${p.settling} still settling · ${p.alreadyMirrored} already mirrored · ${p.skipped} skipped by profile${p.ignored ? ` · ${p.ignored} ignored` : ''}${p.needsTagging ? ` · <b>${p.needsTagging} need MusicBrainz tags</b>` : ''}${p.auditing ? ` · ${p.auditing} being audited` : ''}.</div>
     <div class="row" style="margin-top:10px">
       ${p.overflow.length ? `<button class="primary" id="startAll">Convert all ${fmtBytes(p.bytesIn + p.overflowBytes)}</button><button id="startCap">Respect cap (${fmtBytes(p.bytesIn)})</button>` : `<button class="primary" id="startCap" ${p.albums.length ? '' : 'disabled'}>Start batch</button>`}
     </div>`;

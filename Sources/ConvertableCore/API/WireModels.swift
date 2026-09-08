@@ -70,6 +70,7 @@ public struct ArtistRow: Codable, Equatable, Sendable {
 public struct AlbumRow: Codable, Equatable, Sendable {
     public var artistDir: String, albumDir: String, name: String, tracks: Int, bytes: Int64, mirrored: Int, lossless: Int, lossy: Int, status: String, firstSeen: Double
     public var untagged: Int = 0, unaudited: Int = 0, stale: Int = 0
+    public var ignored: Bool = false
     public var done: Bool { status == "complete" && stale == 0 }
 }
 
@@ -84,7 +85,7 @@ public struct PlanPreview: Codable, Equatable, Sendable {
     public var overflowBytes: Int64
     public var backlogAlbums: Int, backlogBytes: Int64
     public var settling: Int, alreadyMirrored: Int, skipped: Int
-    public var needsTagging: Int = 0, auditing: Int = 0
+    public var needsTagging: Int = 0, auditing: Int = 0, ignored: Int = 0
     public var estimatedSeconds: Double
 }
 
@@ -102,6 +103,7 @@ public enum Command: Codable, Sendable {
     case startBatch(Selection, exceedCap: Bool)
     case stop
     case pin(artistDir: String, pinned: Bool)
+    case ignoreAlbum(artistDir: String, albumDir: String, ignored: Bool)
     case importNow
     case enableMusicImport
     case approve(id: Int64)

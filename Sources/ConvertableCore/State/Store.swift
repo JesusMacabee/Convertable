@@ -311,6 +311,18 @@ public final class Store: @unchecked Sendable {
         else { try db.run("DELETE FROM pins WHERE artist_dir=?", [.text(artistDir)]) }
     }
 
+    // MARK: Ignored albums
+
+    public func ignoredAlbums() throws -> Set<AlbumKey> {
+        Set(try db.query("SELECT artist_dir, album_dir FROM ignored_albums") { AlbumKey(artistDir: $0.text(0)!, albumDir: $0.text(1)!) })
+    }
+    /// An ignored album is left out of every plan, the backlog and the needs-tagging counts, and out of its artist's
+    /// totals (so an artist whose only unmirrored albums are ignored shows as complete). Its mirror copies are untouched.
+    public func ignore(_ key: AlbumKey, ignored: Bool, now: Double = Date().timeIntervalSince1970) throws {
+        if ignored { try db.run("INSERT OR IGNORE INTO ignored_albums (artist_dir, album_dir, ignored_at) VALUES (?,?,?)", [.text(key.artistDir), .text(key.albumDir), .real(now)]) }
+        else { try db.run("DELETE FROM ignored_albums WHERE artist_dir=? AND album_dir=?", [.text(key.artistDir), .text(key.albumDir)]) }
+    }
+
     // MARK: Aggregates for the planner and the picker
 
     public struct AlbumSummary: Equatable, Sendable {
@@ -328,6 +340,7 @@ public final class Store: @unchecked Sendable {
         public var displayAlbum: String?
         public var untagged: Int = 0      // tracks audited and found without MusicBrainz IDs
         public var unaudited: Int = 0     // tracks not yet audited
+        public var ignored: Bool = false  // user chose to leave this album out
     }
 
     public func albumSummaries(artist: String? = nil) throws -> [AlbumSummary] {
@@ -340,9 +353,11 @@ public final class Store: @unchecked Sendable {
                    MAX(s.tag_albumartist) tag_aa, MAX(s.tag_album) tag_album,
                    SUM(CASE WHEN o.id IS NOT NULL AND ((COALESCE(o.tags_written_at, o.encoded_at) IS NOT NULL AND s.stable_since > COALESCE(o.tags_written_at, o.encoded_at)) OR o.tag_policy < \(TagPolicy.version)) THEN 1 ELSE 0 END) stale,
                    SUM(CASE WHEN s.has_mbid = 0 THEN 1 ELSE 0 END) untagged,
-                   SUM(CASE WHEN s.has_mbid IS NULL THEN 1 ELSE 0 END) unaudited
+                   SUM(CASE WHEN s.has_mbid IS NULL THEN 1 ELSE 0 END) unaudited,
+                   (i.artist_dir IS NOT NULL) ignored
             FROM source_files s
             LEFT JOIN outputs o ON o.source_id = s.id AND o.verify_ok = 1
+            LEFT JOIN ignored_albums i ON i.artist_dir = s.artist_dir AND i.album_dir = s.album_dir
             WHERE s.status='active' AND s.kind != 'other'
             """
         var params: [Database.Value] = []
@@ -352,7 +367,8 @@ public final class Store: @unchecked Sendable {
             AlbumSummary(key: AlbumKey(artistDir: r.text(0)!, albumDir: r.text(1)!), tracks: Int(r.int(2)!), bytes: r.int(3)!,
                          losslessTracks: Int(r.int(4)!), lossyTracks: Int(r.int(5)!), mirrored: Int(r.int(6)!), stale: Int(r.int(12) ?? 0),
                          firstSeen: r.double(7)!, lastChange: r.double(8)!, minObservations: Int(r.int(9)!),
-                         displayArtist: r.text(10), displayAlbum: r.text(11), untagged: Int(r.int(13) ?? 0), unaudited: Int(r.int(14) ?? 0))
+                         displayArtist: r.text(10), displayAlbum: r.text(11), untagged: Int(r.int(13) ?? 0), unaudited: Int(r.int(14) ?? 0),
+                         ignored: (r.int(15) ?? 0) != 0)
         }
     }
 
@@ -378,7 +394,8 @@ public final class Store: @unchecked Sendable {
                    SUM(CASE WHEN o.id IS NOT NULL AND ((COALESCE(o.tags_written_at, o.encoded_at) IS NOT NULL AND s.stable_since > COALESCE(o.tags_written_at, o.encoded_at)) OR o.tag_policy < \(TagPolicy.version)) THEN 1 ELSE 0 END) stale
             FROM source_files s
             LEFT JOIN outputs o ON o.source_id = s.id AND o.verify_ok = 1
-            WHERE s.status='active' AND s.kind != 'other'
+            LEFT JOIN ignored_albums i ON i.artist_dir = s.artist_dir AND i.album_dir = s.album_dir
+            WHERE s.status='active' AND s.kind != 'other' AND i.artist_dir IS NULL
             GROUP BY s.artist_dir ORDER BY s.artist_dir COLLATE NOCASE
             """) { r in
             let dir = r.text(0)!

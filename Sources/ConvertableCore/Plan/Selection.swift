@@ -50,7 +50,7 @@ public struct PlannedAlbum: Equatable, Sendable {
 }
 
 public struct Plan: Sendable {
-    public enum Ineligibility: Equatable, Sendable { case settling(secondsLeft: Int), nothingToDo, allSkipped, needsTagging(untagged: Int), auditing }
+    public enum Ineligibility: Equatable, Sendable { case settling(secondsLeft: Int), nothingToDo, allSkipped, needsTagging(untagged: Int), auditing, ignored }
 
     public var selection: Selection
     public var albums: [PlannedAlbum]               // fits within the cap, in processing order

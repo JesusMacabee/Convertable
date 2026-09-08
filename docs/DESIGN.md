@@ -285,6 +285,8 @@ Both modes are gated identically; the manual library switching the user plans is
 
 - **MusicBrainz gate and tag-derived paths** (post-Phase 8): an album is only planned when every track carries MusicBrainz IDs (`has_mbid`, filled by the tag audit after each scan); the rest are listed as *Needs tagging* for Picard. Mirror paths for gated albums are `<source artist folder>/Album (Year)/[Disc-]NN Title.ext`. The **artist level always mirrors the source folder** — that folder is the user's choice and the unit the Convert tab selects; album-artist tags vary per album (collaborations, mis-filed albums) and would scatter one artist across several mirror folders. Album folders are registered per MusicBrainz release (`album_folders`) so two pressings of the same album get a stable ` [2]` suffix; when the preferred name changes (naming policy, retag) the release is re-registered and the repath pass renames the mirror folder and re-points Music.
 
+- **Ignored albums** (`ignored_albums`, v8): a per-album toggle (⊘ in the Convert tab, `convertctl ignore`, `POST /api/albums/ignore`) leaves an album out of every plan, the backlog and the needs-tagging counts, and out of its artist's totals — so an artist whose only remaining albums are ignored shows as complete and greys out. Existing mirror copies and Music entries are untouched; un-ignoring restores the album to the backlog.
+
 ## 13. User interface
 
 ### 13.1 Menu bar (always visible, minimal)

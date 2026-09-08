@@ -7,7 +7,7 @@ import ConvertableWeb
 struct Convertctl: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Convertable command line — diagnostics and scripting over the same core as the app.",
-        subcommands: [Doctor.self, Config.self, Tags.self, Scan.self, PlanCommand.self, Artists.self, Status.self, Pin.self, Run.self, Serve.self, WebURL.self, Music.self, Review.self, Audit.self],
+        subcommands: [Doctor.self, Config.self, Tags.self, Scan.self, PlanCommand.self, Artists.self, Status.self, Pin.self, Ignore.self, Run.self, Serve.self, WebURL.self, Music.self, Review.self, Audit.self],
         defaultSubcommand: Doctor.self)
 }
 
@@ -141,7 +141,8 @@ struct PlanCommand: ParsableCommand {
         let skipped = plan.ineligible.filter { $0.1 == .allSkipped }.count
         let tags = plan.ineligible.filter { if case .needsTagging = $0.1 { return true }; return false }.count
         let auditing = plan.ineligible.filter { $0.1 == .auditing }.count
-        print("Not in this plan: \(settling) settling, \(done) already mirrored, \(skipped) all-skipped, \(tags) need MusicBrainz tags, \(auditing) being audited")
+        let ignored = plan.ineligible.filter { $0.1 == .ignored }.count
+        print("Not in this plan: \(settling) settling, \(done) already mirrored, \(skipped) all-skipped, \(tags) need MusicBrainz tags, \(auditing) being audited, \(ignored) ignored")
     }
 }
 
@@ -191,6 +192,17 @@ struct Status: ParsableCommand {
         if let s = try store.lastFinishedScan(.full) { print("Last full scan: \(Date(timeIntervalSince1970: s.finishedAt!)) (\(s.filesSeen) files)") }
         if let s = try store.lastFinishedScan(.incremental) { print("Last incremental scan: \(Date(timeIntervalSince1970: s.finishedAt!))") }
         if let s = try store.unfinishedFullScan() { print("Unfinished full scan: resumes after '\(s.checkpoint ?? "start")'") }
+    }
+}
+
+struct Ignore: ParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Ignore an album (left out of batches, backlog and needs-tagging counts; mirror copies untouched), or include it again with --remove.")
+    @Argument var artist: String
+    @Argument var album: String
+    @Flag(name: .long) var remove = false
+    func run() throws {
+        try openStore().ignore(AlbumKey(artistDir: artist, albumDir: album), ignored: !remove)
+        print(remove ? "included again: \(artist) — \(album)" : "ignored: \(artist) — \(album)")
     }
 }
 

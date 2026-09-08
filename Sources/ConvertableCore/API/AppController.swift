@@ -254,6 +254,7 @@ public actor AppController {
         case let .startBatch(sel, exceed): if let why = startBatch(sel, exceedCap: exceed) { throw ControllerError.refused(why) }
         case .stop: requestStop(); if batch != nil { state = .paused }
         case let .pin(dir, pinned): try store.pin(dir, pinned: pinned)
+        case let .ignoreAlbum(artist, album, ignored): try store.ignore(AlbumKey(artistDir: artist, albumDir: album), ignored: ignored); backlogCache = nil; await publishStatus()
         case .importNow: importIntoMusic()
         case .enableMusicImport: importIntoMusic(force: true)
         case let .approve(id): try await approve(id)
@@ -468,7 +469,7 @@ public actor AppController {
         if let c = backlogCache, now - c.at < 10 { return c.value }
         guard let summaries = try? store.albumSummaries() else { return (0, 0, 0, 0, 0, 0) }
         var albums = 0, settling = 0, needsTagging = 0, needsTaggingTracks = 0, auditing = 0; var bytes: Int64 = 0
-        for s in summaries where s.mirrored < s.tracks || s.stale > 0 {
+        for s in summaries where !s.ignored && (s.mirrored < s.tracks || s.stale > 0) {
             if settings.requireMusicBrainz {
                 if s.untagged > 0 { needsTagging += 1; needsTaggingTracks += s.untagged; continue }
                 if s.unaudited > 0 { auditing += 1; continue }
@@ -493,7 +494,7 @@ public actor AppController {
         ((try? store.albumSummaries(artist: artist)) ?? []).map {
             AlbumRow(artistDir: $0.key.artistDir, albumDir: $0.key.albumDir, name: $0.displayAlbum ?? ($0.key.albumDir.isEmpty ? "(loose files)" : $0.key.albumDir),
                      tracks: $0.tracks, bytes: $0.bytes, mirrored: $0.mirrored, lossless: $0.losslessTracks, lossy: $0.lossyTracks,
-                     status: $0.mirrored == 0 ? "none" : ($0.mirrored == $0.tracks ? "complete" : "partial"), firstSeen: $0.firstSeen, untagged: $0.untagged, unaudited: $0.unaudited, stale: $0.stale)
+                     status: $0.mirrored == 0 ? "none" : ($0.mirrored == $0.tracks ? "complete" : "partial"), firstSeen: $0.firstSeen, untagged: $0.untagged, unaudited: $0.unaudited, stale: $0.stale, ignored: $0.ignored)
         }
     }
 
@@ -526,7 +527,8 @@ public actor AppController {
                            alreadyMirrored: plan.ineligible.filter { $0.1 == .nothingToDo }.count,
                            skipped: plan.ineligible.filter { $0.1 == .allSkipped }.count,
                            needsTagging: plan.ineligible.filter { if case .needsTagging = $0.1 { return true }; return false }.count,
-                           auditing: plan.ineligible.filter { $0.1 == .auditing }.count, estimatedSeconds: seconds)
+                           auditing: plan.ineligible.filter { $0.1 == .auditing }.count,
+                           ignored: plan.ineligible.filter { $0.1 == .ignored }.count, estimatedSeconds: seconds)
     }
 
     public func batches(limit: Int = 50) -> [BatchRow] {
