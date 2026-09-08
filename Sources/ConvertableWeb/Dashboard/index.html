@@ -431,7 +431,7 @@ $('#btnPreview').onclick = async () => {
     <div class="row" style="margin-top:10px">
       ${p.overflow.length ? `<button class="primary" id="startAll">Convert all ${fmtBytes(p.bytesIn + p.overflowBytes)}</button><button id="startCap">Respect cap (${fmtBytes(p.bytesIn)})</button>` : `<button class="primary" id="startCap" ${p.albums.length ? '' : 'disabled'}>Start batch</button>`}
     </div>`;
-  const start = exceed => async () => { await api('/batch', { method: 'POST', body: { selection: p.selection, exceedCap: exceed } }); selArtists.clear(); selAlbums.clear(); renderArtists(); updateSummary(); drawer.close(); showPage('overview'); };
+  const start = exceed => async () => { try { await api('/batch', { method: 'POST', body: { selection: p.selection, exceedCap: exceed } }); } catch (e) { alert('Could not start: ' + e.message.replace(/^.*→ \d+ /, '')); return; } selArtists.clear(); selAlbums.clear(); renderArtists(); updateSummary(); drawer.close(); showPage('overview'); };
   $('#startCap').onclick = start(false);
   if ($('#startAll')) $('#startAll').onclick = start(true);
 };

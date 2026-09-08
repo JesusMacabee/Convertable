@@ -1,5 +1,11 @@
 import Foundation
 
+/// A command the controller declined to carry out, with a user-facing reason.
+public enum ControllerError: Error, LocalizedError, Equatable {
+    case refused(String)
+    public var errorDescription: String? { if case let .refused(why) = self { return why }; return nil }
+}
+
 /// The one object that owns the app's behaviour. The dashboard, the menu bar and the CLI are all
 /// clients of this API. Scheduling (periodic scans, auto-continue) lives here too.
 public actor AppController {
@@ -245,7 +251,7 @@ public actor AppController {
     public func perform(_ command: Command) async throws {
         switch command {
         case let .scan(full): scan(full: full)
-        case let .startBatch(sel, exceed): startBatch(sel, exceedCap: exceed)
+        case let .startBatch(sel, exceed): if let why = startBatch(sel, exceedCap: exceed) { throw ControllerError.refused(why) }
         case .stop: requestStop(); if batch != nil { state = .paused }
         case let .pin(dir, pinned): try store.pin(dir, pinned: pinned)
         case .importNow: importIntoMusic()
@@ -331,19 +337,22 @@ public actor AppController {
         await publishStatus()
     }
 
-    public func startBatch(_ selection: Selection, exceedCap: Bool) {
-        guard batchTask == nil else { return }
+    /// Starts a batch; returns the reason when nothing was started so callers (API, dashboard) can say so
+    /// instead of silently reporting the batch that was already running.
+    @discardableResult
+    public func startBatch(_ selection: Selection, exceedCap: Bool) -> String? {
+        guard batchTask == nil else { return "a batch is already running — stop it or wait for it to finish" }
         stopRequested = false
         var sel = selection
         if exceedCap { sel.cap = nil }
-        guard let profile = Profile.named(settings.profileID) else { return }
+        guard let profile = Profile.named(settings.profileID) else { return "unknown output profile \(settings.profileID)" }
         let planner = makePlanner(profile)
-        guard let plan = try? planner.plan(sel), !plan.albums.isEmpty else { return }
-        guard case .available = VolumeGate.check(root: settings.sourceRoot, timeout: 15) else { return }
+        guard let plan = try? planner.plan(sel), !plan.albums.isEmpty else { return "nothing eligible in that selection" }
+        guard case .available = VolumeGate.check(root: settings.sourceRoot, timeout: 15) else { return "source volume is not available" }
 
         let selJSON = (try? JSONEncoder().encode(sel)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
         guard let batchID = try? store.db.insert("INSERT INTO batches (selection_json, budget_bytes, started_at) VALUES (?,?,?)",
-                                                 [.text(selJSON), Database.Value(sel.cap), .real(Date().timeIntervalSince1970)]) else { return }
+                                                 [.text(selJSON), Database.Value(sel.cap), .real(Date().timeIntervalSince1970)]) else { return "could not record the batch in the state database" }
         var progress = BatchProgress(id: batchID, selection: sel.description, albumsTotal: plan.albums.count, albumsDone: 0,
                                      tracksTotal: plan.trackCount, tracksDone: 0, tracksFailed: 0, bytesInTotal: plan.bytesIn, bytesInDone: 0, bytesOut: 0,
                                      startedAt: Date().timeIntervalSince1970, currentAlbum: nil, currentTracks: [],
@@ -368,6 +377,7 @@ public actor AppController {
             await self?.batchFinished(summary, progress: &progress)
         }
         Task { await publishStatus() }
+        return nil
     }
 
     private let stopFlag = AtomicFlag()

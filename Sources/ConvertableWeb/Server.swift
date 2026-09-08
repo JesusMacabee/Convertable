@@ -77,7 +77,8 @@ public struct WebServer: Sendable {
         api.post("batch") { req, ctx in
             struct Body: Decodable { var selection: Selection; var exceedCap: Bool? }
             let b = try await req.decode(as: Body.self, context: ctx)
-            try await self.controller.perform(.startBatch(b.selection, exceedCap: b.exceedCap ?? false))
+            do { try await self.controller.perform(.startBatch(b.selection, exceedCap: b.exceedCap ?? false)) }
+            catch let ControllerError.refused(why) { throw HTTPError(.conflict, message: why) }
             return try self.json(await self.controller.status())
         }
         api.post("stop") { _, _ in try await self.controller.perform(.stop); return try self.json(await self.controller.status()) }

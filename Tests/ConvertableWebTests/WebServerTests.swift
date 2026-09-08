@@ -106,6 +106,18 @@ final class WebServerTests: XCTestCase {
         }
     }
 
+    func testRefusedBatchStartIsAConflictNotASilentOK() async throws {
+        try await server.buildApplication().test(.router) { client in
+            // Nothing eligible for this artist: the controller declines, and the API must say so rather than return 200 + status.
+            struct Body: Encodable { var selection: Selection; var exceedCap: Bool }
+            let sel = Selection(mode: .artists(["Nobody"]), cap: nil, ignoreSettle: true)
+            let body = ByteBuffer(bytes: try JSONEncoder().encode(Body(selection: sel, exceedCap: false)))
+            try await client.execute(uri: "/api/batch", method: .post, headers: authMut, body: body) { r in
+                XCTAssertEqual(r.status, .conflict)
+                XCTAssertTrue(String(buffer: r.body).contains("nothing eligible"), String(buffer: r.body))
+            }
+        }
+    }
     func testSettingsRoundTrip() async throws {
         try await server.buildApplication().test(.router) { client in
             try await client.execute(uri: "/api/settings", method: .get, headers: auth) { r in
