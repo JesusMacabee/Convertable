@@ -174,7 +174,7 @@ public actor AppController {
                 try? self.store.log("info", "legacy", "mapped \(n) legacy tracks to Music")
             }
             if let n = try? matcher.run(), n > 0 {
-                try? self.store.log("info", "review", "\(n) legacy supersede proposal(s) await your approval")
+                try? self.store.log("info", "review", "\(n) proposal(s) to replace old AAC copies await your approval")
             }
             await self.legacyFinished()
         }

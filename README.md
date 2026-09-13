@@ -23,7 +23,7 @@ Apple Music library  →  iPod Classic
 - **Batches you choose.** Convert by size budget (25 / 50 / 100 / 250 GB or custom) or pick artists and albums from a list; a queue drawer collects the selection. Albums are never split across a batch. Already-mirrored albums grey out; any album can be ignored with one click.
 - **Change handling.** Audio hashes decide what happened: tags changed → rewrite tags in place and tell Music to refresh; file moved → move the mirror copy and re-point Music; audio changed → re-encode. A tag-policy version lets a later app version re-sync every mirror file's metadata from source.
 - **Deletes need approval.** A source album that disappears becomes a proposal. Approve it and the mirror copy goes to a dated quarantine folder (purged after 30 days), never straight to the trash. Dead Music entries (files gone) are found and removed the same way.
-- **Legacy library supersede.** If you already have a folder of downloaded AACs, Convertable indexes it and proposes replacing albums the mirror now covers, leaving everything else alone.
+- **Replacing an old AAC library.** If you already have a folder of downloaded AACs, Convertable indexes it and proposes replacing the albums the mirror now covers with the new copies (the old files go to quarantine, play counts carry over), leaving everything else alone.
 - **Music.app bridge.** Tracks are added by reference via AppleScript, only when the configured library is the one Music has open, so a second library on the same Mac is never polluted. Import, refresh, relocate, remove and dead-entry scans all go through it.
 - **Three front ends over one core:** a menu bar item (status, badge, quick actions), a token-protected web dashboard served by the app (Overview, Convert, Batches, Review, Activity, Settings, first-run wizard), and a `convertctl` CLI for diagnostics and scripting.
 
@@ -57,7 +57,7 @@ Scripts/test.sh
 2. The next scan audits the tags. Tagged albums join the backlog; untagged ones appear under *Needs tagging*.
 3. Click *Start next batch* (size mode) or pick artists on the Convert tab, preview, start. Watch progress in the menu bar or the dashboard.
 4. Finished albums are added to Music automatically when the right library is open.
-5. Check the Review tab now and then for removal, supersede and dead-entry proposals; approve individually or all at once.
+5. Check the Review tab now and then for removal, replacement and dead-entry proposals; approve individually or all at once.
 
 `convertctl doctor` checks the mount, paths, tools, Music library, database and share latency. `convertctl plan`, `artists`, `status`, `audit`, `music …` and `review …` expose the rest.
 

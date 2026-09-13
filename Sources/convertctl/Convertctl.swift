@@ -403,7 +403,7 @@ struct Music: ParsableCommand {
 // MARK: - Phase 6: review
 
 struct Review: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Removal / supersede proposals.", subcommands: [List.self, Detect.self, Approve.self, Dismiss.self, LegacyIndex.self, LegacyMatch.self, RepairSupersede.self, CleanupDead.self])
+    static let configuration = CommandConfiguration(abstract: "Removal / replacement proposals (old AAC copies replaced by the mirror).", subcommands: [List.self, Detect.self, Approve.self, Dismiss.self, LegacyIndex.self, LegacyMatch.self, RepairSupersede.self, CleanupDead.self])
 
     struct List: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Pending and approved proposals.")
@@ -456,17 +456,17 @@ struct Review: AsyncParsableCommand {
         }
     }
     struct CleanupDead: ParsableCommand {
-        static let configuration = CommandConfiguration(commandName: "cleanup-dead", abstract: "Remove Music entries of superseded legacy files whose IDs were never known (matched by metadata, dead entries only).")
+        static let configuration = CommandConfiguration(commandName: "cleanup-dead", abstract: "Remove Music entries of replaced legacy files whose IDs were never known (matched by metadata, dead entries only).")
         func run() throws {
             let d = try SupersedeMatcher.removeDeadSupersededEntries(store: try openStore(), bridge: MusicBridge())
             print("mapped \(d.mapped), removed \(d.removed) from Music")
         }
     }
     struct LegacyMatch: ParsableCommand {
-        static let configuration = CommandConfiguration(commandName: "legacy-match", abstract: "Propose supersedes for completed mirror albums.")
+        static let configuration = CommandConfiguration(commandName: "legacy-match", abstract: "Propose replacing old AAC copies of completed mirror albums.")
         func run() throws {
             let s = try Settings.load(); let store = try openStore()
-            print("new supersede proposals: \(try SupersedeMatcher(store: store, profile: Profile.named(s.profileID)!).run())")
+            print("new replacement proposals: \(try SupersedeMatcher(store: store, profile: Profile.named(s.profileID)!).run())")
         }
     }
 }

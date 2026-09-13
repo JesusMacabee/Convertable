@@ -42,7 +42,7 @@ final class SupersedeTests: XCTestCase {
         XCTAssertEqual(try m.run(), 0, "not proposed twice")
         let p = try store.proposals()[0]
         XCTAssertEqual(p.kind, "supersede"); XCTAssertEqual(p.items.count, 3)
-        XCTAssertTrue(p.title.hasPrefix("Replace legacy"), p.title)
+        XCTAssertTrue(p.title.hasPrefix("Replace the old AAC"), p.title)
         XCTAssertEqual(p.items[0].counterpartPersistentID, "M0"); XCTAssertEqual(p.items[2].musicPersistentID, "L2")
         XCTAssertEqual(p.items[0].relPath, "/L/21 Savage and Metro Boomin/Savage Mode/1 No Advance.m4a")
     }

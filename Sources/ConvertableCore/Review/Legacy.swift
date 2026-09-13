@@ -110,8 +110,8 @@ public struct SupersedeMatcher {
             let titleHits = legacy.filter { l in mirrorTitles.contains { $0.contains(l.titleNorm) && !l.titleNorm.isEmpty } }.count
             let ratio = Double(titleHits) / Double(max(1, legacy.count))
             let confident = countOK && ratio >= 0.6
-            let title = confident ? "Replace legacy AAC copies with the mirror" : "Possible legacy duplicate — check before approving"
-            let reason = "Legacy album “\(a.displayArtist!) — \(a.displayAlbum!)”: \(legacy.count) legacy tracks vs \(mirror.count) mirrored; \(titleHits) title matches\(legacy.first?.pid == nil ? "; legacy tracks not yet mapped to Music" : "")."
+            let title = confident ? "Replace the old AAC copies with the mirror" : "Possible legacy duplicate — check before approving"
+            let reason = "Old AAC album “\(a.displayArtist!) — \(a.displayAlbum!)”: \(legacy.count) legacy tracks vs \(mirror.count) mirrored; \(titleHits) title matches\(legacy.first?.pid == nil ? "; legacy tracks not yet mapped to Music" : "")."
             // Counterparts by track number order when counts line up.
             let items: [Store.ProposalItem] = legacy.enumerated().map { i, l in
                 let counterpart = (countOK && i < mirror.count) ? mirror[i].1 : nil
@@ -271,10 +271,10 @@ public struct SupersedeMatcher {
                     try FileManager.default.moveItem(atPath: item.relPath, toPath: dest)
                 }
                 if let lid = item.legacyID { try store.db.run("UPDATE legacy_files SET superseded_at=? WHERE id=?", [.real(Date().timeIntervalSince1970), .integer(lid)]) }
-                try? store.log("info", "review", "superseded legacy \(item.relPath)", relPath: item.relPath)
+                try? store.log("info", "review", "replaced old copy \(item.relPath)", relPath: item.relPath)
             } catch {
                 remaining.append(item)
-                try? store.log("warn", "review", "supersede failed: \(error)", relPath: item.relPath)
+                try? store.log("warn", "review", "replace failed: \(error)", relPath: item.relPath)
             }
         }
         return remaining
