@@ -30,7 +30,8 @@ input[type=checkbox] { width: 15px; height: 15px; }
 code, .mono { font-family: var(--mono); font-size: 12.5px; }
 
 header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
-header h1 { font-size: 17px; margin: 0; letter-spacing: -.01em; }
+header h1 { font-size: 22px; margin: 0; letter-spacing: -.015em; display: flex; align-items: center; gap: 10px; }
+header h1 img { width: 32px; height: 32px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--bg); border: 1px solid var(--line); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .dot.idle { background: var(--muted); } .dot.scanning, .dot.converting { background: var(--accent); animation: pulse 1.2s infinite; }
@@ -106,7 +107,7 @@ form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 
 </head>
 <body>
 <header>
-  <h1>Convertable</h1>
+  <h1><img id="logo" alt="" hidden>Convertable</h1>
   <span class="pill"><i class="dot" id="stateDot"></i><span id="stateText">connecting…</span></span>
   <span class="spacer"></span>
   <span class="ind" id="volInd"></span>
@@ -257,6 +258,9 @@ const api = async (path, opts = {}) => {
   if (!r.ok) throw new Error(path + ' → ' + r.status + ' ' + (await r.text()));
   return r.json();
 };
+
+// ---- header logo (the embedded touch icon, so the artwork lives in one place)
+{ const l = document.querySelector('link[rel="apple-touch-icon"]'); if (l) { $('#logo').src = l.href; $('#logo').hidden = false; } }
 
 // ---- navigation
 $$('nav button').forEach(b => b.onclick = () => showPage(b.dataset.page));
