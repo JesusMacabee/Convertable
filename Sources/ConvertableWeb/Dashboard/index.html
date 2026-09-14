@@ -321,7 +321,7 @@ function renderBatch(b) {
   el.innerHTML = `
     <div class="row"><b>#${b.id}</b> <span class="sub">${esc(b.selection)}</span></div>
     <div class="bar"><i style="width:${pct}%"></i></div>
-    <div class="row sub"><span>${b.albumsDone}/${b.albumsTotal} albums · ${b.tracksDone}/${b.tracksTotal} tracks${b.tracksFailed ? ` · <span style="color:var(--err)">${b.tracksFailed} failed</span>` : ''}</span>
+    <div class="row sub"><span>${b.albumsDone}/${b.albumsTotal} albums · ${b.tracksDone}/${b.tracksTotal} tracks${b.tracksFailed ? ` · <span style="color:var(--err)">${b.tracksFailed} failed</span>` : ''}${b.tracksDeferred ? ` · <span style="color:var(--warn)" title="source changed since the scan — re-settling for a later batch">${b.tracksDeferred} deferred</span>` : ''}</span>
       <span>${fmtBytes(b.bytesInDone)} of ${fmtBytes(b.bytesInTotal)} in → ${fmtBytes(b.bytesOut)} out</span><span>ETA ${eta}</span></div>
     ${b.currentAlbum ? `<div style="margin-top:6px"><b>${esc(b.currentAlbum)}</b><div class="chips">${b.currentTracks.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div></div>` : ''}
     ${b.backlogAlbums ? `<div class="sub" style="margin-top:6px">After this batch: ${b.backlogAlbums} albums / ${fmtBytes(b.backlogBytes)} remain.</div>` : ''}`;

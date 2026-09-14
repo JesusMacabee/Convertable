@@ -391,15 +391,15 @@ public actor AppController {
         case let .albumStarted(a):
             b.currentAlbum = "\(a.displayArtist) — \(a.displayAlbum)"; b.currentTracks = a.tracks.map(\.source.fileName)
         case let .trackFinished(r):
-            b.tracksDone += r.ok ? 1 : 0; b.tracksFailed += r.ok ? 0 : 1
+            b.tracksDone += r.ok ? 1 : 0; b.tracksDeferred += r.deferred ? 1 : 0; b.tracksFailed += (!r.ok && !r.deferred) ? 1 : 0
             b.bytesInDone += r.track.source.size; b.bytesOut += r.outputBytes
             b.currentTracks.removeAll { $0 == r.track.source.fileName }
             if r.ok, case .transcode = r.track.action, r.track.source.kind == .lossless, r.track.source.size > 0 {
                 let ratio = Double(r.outputBytes) / Double(r.track.source.size)
                 learnedRatio = learnedRatio.map { $0 * 0.9 + ratio * 0.1 } ?? ratio
             }
-            activity = ActivityRow(id: 0, at: Date().timeIntervalSince1970, level: r.ok ? "info" : "error", category: "pipeline",
-                                   message: r.ok ? "\(r.track.action.label) → \((r.track.outputRelPath as NSString).lastPathComponent)" : "failed: \(r.error ?? "?")",
+            activity = ActivityRow(id: 0, at: Date().timeIntervalSince1970, level: r.ok || r.deferred ? "info" : "error", category: "pipeline",
+                                   message: r.ok ? "\(r.track.action.label) → \((r.track.outputRelPath as NSString).lastPathComponent)" : r.deferred ? "deferred: \(r.error ?? "?")" : "failed: \(r.error ?? "?")",
                                    relPath: r.track.source.relPath)
         case .albumFinished:
             b.albumsDone += 1; b.currentAlbum = nil
@@ -414,7 +414,7 @@ public actor AppController {
     private func batchFinished(_ summary: Pipeline.Summary, progress: inout BatchProgress) async {
         batchTask = nil
         lastBatchEndedBy = summary.endedBy
-        let msg = "Batch #\(progress.id) \(summary.endedBy): \(summary.tracksDone) ok, \(summary.tracksFailed) failed, \(ByteCount.string(summary.bytesIn)) → \(ByteCount.string(summary.bytesOut))"
+        let msg = "Batch #\(progress.id) \(summary.endedBy): \(summary.tracksDone) ok, \(summary.tracksFailed) failed" + (summary.tracksDeferred > 0 ? ", \(summary.tracksDeferred) deferred (source changed since the scan)" : "") + ", \(ByteCount.string(summary.bytesIn)) → \(ByteCount.string(summary.bytesOut))"
         try? store.log(summary.tracksFailed > 0 ? "warn" : "info", "batch", msg)
         batch = nil
         if summary.tracksFailed > 0 { raise(Alert(id: "batch-\(progress.id)", level: "warn", message: "\(summary.tracksFailed) track(s) failed in batch #\(progress.id) — see Activity", action: nil)) }

@@ -110,6 +110,13 @@ public final class Store: @unchecked Sendable {
         return .changed
     }
 
+    /// A source found changed outside a scan (the pipeline stat'ed it before copying): record the new size/mtime and
+    /// restart its settle clock, exactly as a scan would. Its tags are re-read because stable_since now exceeds tag_audit_at.
+    public func noteSourceChanged(id: Int64, size: Int64, mtime: Double, now: Double) throws {
+        try db.run("UPDATE source_files SET size=?, mtime=?, stable_since=?, observations=1 WHERE id=?",
+                   [.integer(size), .real(mtime), .real(now), .integer(id)])
+    }
+
     /// Marks active files not seen by `scanID` as missing. Optionally limited to one directory (non-recursive)
     /// or to everything under a prefix (recursive).
     @discardableResult

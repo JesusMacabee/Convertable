@@ -25,6 +25,8 @@ public final class Pipeline: @unchecked Sendable {
         public let seconds: Double
         public let error: String?
         public let verify: Verifier.Report?
+        /// Not converted this time because the source changed after it was scanned; it re-settles and a later batch takes it.
+        public var deferred: Bool = false
     }
 
     public struct AlbumResult: Sendable {
@@ -39,6 +41,7 @@ public final class Pipeline: @unchecked Sendable {
         public var bytesOut: Int64 = 0
         public var tracksDone = 0
         public var tracksFailed = 0
+        public var tracksDeferred = 0
         public var seconds: Double = 0
         public var endedBy: String = "empty"
     }
@@ -90,7 +93,7 @@ public final class Pipeline: @unchecked Sendable {
             summary.albums.append(ar)
             for r in results {
                 summary.bytesIn += r.track.source.size
-                if r.ok { summary.bytesOut += r.outputBytes; summary.tracksDone += 1 } else { summary.tracksFailed += 1 }
+                if r.ok { summary.bytesOut += r.outputBytes; summary.tracksDone += 1 } else if r.deferred { summary.tracksDeferred += 1 } else { summary.tracksFailed += 1 }
             }
             onEvent?(.albumFinished(ar))
             if results.count < album.tracks.count { summary.endedBy = "user"; break albums }
@@ -116,6 +119,12 @@ public final class Pipeline: @unchecked Sendable {
             do {
                 let (bytes, report) = try await processOnce(track, attempt: attempt)
                 return TrackResult(track: track, ok: true, outputBytes: bytes, seconds: Date().timeIntervalSince(t0), error: nil, verify: report)
+            } catch let PipelineError.sourceChanged(was, now) {
+                // Retrying cannot help: the scan's record is stale. The file has been marked changed so it re-settles,
+                // gets its tags re-read, and the next batch converts the current version.
+                let msg = "source changed since the last scan (\(was) → \(now) bytes); re-settling, next batch will take it"
+                try? store(sync: { try $0.log("info", "pipeline", msg, relPath: track.source.relPath) })
+                return TrackResult(track: track, ok: false, outputBytes: 0, seconds: Date().timeIntervalSince(t0), error: msg, verify: nil, deferred: true)
             } catch {
                 lastError = "\(error)"
                 try? store(sync: { try $0.log("warn", "pipeline", "attempt \(attempt) failed: \(lastError)", relPath: track.source.relPath) })
@@ -132,9 +141,17 @@ public final class Pipeline: @unchecked Sendable {
         try FileManager.default.createDirectory(atPath: work, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(atPath: work) }
 
-        // 1. Copy in (share → local), verify byte count.
+        // 1. Copy in (share → local), verify byte count. First make sure the file is still the one the scan recorded:
+        //    an in-place rewrite (Picard embedding art, a re-rip) inside an already-known folder is invisible to
+        //    incremental scans until the next full scan, and copying it would only ever "mismatch".
+        let sourcePath = config.sourceRoot + "/" + src.relPath
+        let live = try await shareIO.attributes(of: sourcePath)
+        if live.size != src.size || abs(live.mtime - src.mtime) > 0.001 {
+            try store(sync: { try $0.noteSourceChanged(id: src.id, size: live.size, mtime: live.mtime, now: Date().timeIntervalSince1970) })
+            throw PipelineError.sourceChanged(was: src.size, now: live.size)
+        }
         let localIn = work + "/in" + src.ext
-        try await shareIO.copy(from: config.sourceRoot + "/" + src.relPath, to: localIn)
+        try await shareIO.copy(from: sourcePath, to: localIn)
         let inSize = (try? FileManager.default.attributesOfItem(atPath: localIn)[.size] as? NSNumber)?.int64Value ?? -1
         guard inSize == src.size else { throw PipelineError.copyMismatch(expected: src.size, got: inSize) }
 
@@ -264,11 +281,13 @@ public final class Pipeline: @unchecked Sendable {
 
     public enum PipelineError: Error, CustomStringConvertible {
         case copyMismatch(expected: Int64, got: Int64)
+        case sourceChanged(was: Int64, now: Int64)
         case verifyFailed([String])
         case nothingToDo
         public var description: String {
             switch self {
             case let .copyMismatch(e, g): return "copied \(g) bytes, expected \(e) (file still being written?)"
+            case let .sourceChanged(w, n): return "source changed since the last scan (\(w) → \(n) bytes)"
             case let .verifyFailed(p): return "verify failed: " + p.joined(separator: "; ")
             case .nothingToDo: return "nothing to do"
             }

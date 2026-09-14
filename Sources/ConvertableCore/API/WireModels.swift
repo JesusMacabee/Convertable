@@ -14,6 +14,7 @@ public struct BatchProgress: Codable, Equatable, Sendable {
     public var tracksTotal: Int
     public var tracksDone: Int
     public var tracksFailed: Int
+    public var tracksDeferred: Int = 0   // source changed since the scan; re-settling for a later batch
     public var bytesInTotal: Int64
     public var bytesInDone: Int64
     public var bytesOut: Int64

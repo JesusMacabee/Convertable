@@ -91,6 +91,13 @@ public actor ShareIO {
         try await perform("remove") { try FileManager.default.removeItem(atPath: path) }
     }
 
+    public func attributes(of path: String) async throws -> (size: Int64, mtime: Double) {
+        try await perform("stat") {
+            let a = try FileManager.default.attributesOfItem(atPath: path)
+            return ((a[.size] as? NSNumber)?.int64Value ?? 0, (a[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)
+        }
+    }
+
     public func size(of path: String) async throws -> Int64 {
         try await perform("stat") {
             let a = try FileManager.default.attributesOfItem(atPath: path)

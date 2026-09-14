@@ -73,6 +73,28 @@ final class PipelineTests: XCTestCase {
         XCTAssertEqual(errors.count, 1)
     }
 
+    func testSourceRewrittenAfterScanIsDeferredNotRetried() async throws {
+        try add(try Fixtures.first("flac", containing: "16BIT"), as: "A/B/01 same.flac")
+        try add(try Fixtures.first("flac", containing: "16BIT"), as: "A/B/02 rewritten.flac")
+        let plan = try planEverything()
+        // Picard-style in-place rewrite after the scan: same folder, different bytes and mtime.
+        let rewritten = lib.appendingPathComponent("A/B/02 rewritten.flac")
+        var bytes = try Data(contentsOf: rewritten); bytes.append(Data(repeating: 0, count: 312_792)); try bytes.write(to: rewritten)
+        try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: rewritten.path)
+
+        let summary = await Pipeline(config: config(), store: store, shareIO: ShareIO(limit: 2)).run(plan, batchID: nil)
+        XCTAssertEqual(summary.tracksDone, 1); XCTAssertEqual(summary.tracksFailed, 0); XCTAssertEqual(summary.tracksDeferred, 1)
+        XCTAssertTrue(try store.db.query("SELECT message FROM activity WHERE level IN ('warn','error')") { $0.text(0)! }.isEmpty, "no retries, no failure")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mirror.appendingPathComponent("A/B/02 rewritten.m4a").path))
+        // The record now matches the file on disk and its settle clock restarted, so the next scan confirms it and the next batch takes it.
+        let f = try XCTUnwrap(try store.sourceFile(relPath: "A/B/02 rewritten.flac"))
+        XCTAssertEqual(f.size, Int64(bytes.count)); XCTAssertEqual(f.observations, 1)
+        let hold = try Planner(store: store, profile: .ipodClassic, fileSettleSeconds: 0, albumSettleSeconds: 0).plan(Selection(mode: .everything, ignoreSettle: false))
+        XCTAssertTrue(hold.ineligible.contains { $0.0.albumDir == "B" && { if case .settling = $0.1 { return true }; return false }($0) }, "album re-settles")
+        try LibraryScanner(root: lib.path, store: store).incrementalScan()
+        XCTAssertEqual(try store.sourceFile(relPath: "A/B/02 rewritten.flac")?.observations, 2, "second look confirms the rewritten file")
+    }
+
     func testStopBetweenTracksLeavesNothingHalfDone() async throws {
         let flacs = Array(Fixtures.all(withExtension: "flac").prefix(4))
         guard flacs.count == 4 else { throw XCTSkip("need 4 fixtures") }
