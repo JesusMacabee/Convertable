@@ -38,7 +38,6 @@ public struct StatusSnapshot: Codable, Equatable, Sendable {
     public var protocolName: String?
     public var musicLibraryOpen: Bool             // Music is running with the configured library open
     public var musicRunning: Bool
-    public var musicDefaultLibraryMatches: Bool?          // the library Music would open on launch is the configured one; nil = cannot tell
     public var batch: BatchProgress?
     public var library: LibraryCounts
     public var lastFullScan: Double?

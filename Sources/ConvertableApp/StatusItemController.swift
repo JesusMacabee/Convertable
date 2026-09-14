@@ -77,9 +77,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(indicator(s.volumeAvailable ? .ok : .bad, s.volumeAvailable ? s.volume : "\(s.volume) — not mounted"))
         let music: (Indicator, String) = s.musicLibraryOpen ? (.ok, "Music: iPod library open")
             : s.musicRunning ? (.warn, "Music: other library open")
-            : s.musicDefaultLibraryMatches == true ? (.warn, "Music not running (iPod library selected)")
-            : s.musicDefaultLibraryMatches == nil ? (.warn, "Music not running")
-            : (.bad, "Music not running — other library selected")
+            : (.warn, "Music not running")
         menu.addItem(indicator(music.0, music.1 + (s.musicPending > 0 ? " · \(s.musicPending) waiting" : "")))
         if let b = batch ?? s.batch, s.state == .converting || s.state == .paused {
             menu.addItem(.separator())

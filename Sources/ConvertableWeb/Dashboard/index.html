@@ -280,9 +280,7 @@ function renderStatus(s) {
   $('#volInd').innerHTML = led(s.volumeAvailable ? 'ok' : 'bad', s.volumeAvailable ? 'Share mounted' : 'Share not mounted') + '<b>' + esc(s.volume) + '</b>' + (s.volumeAvailable ? '' : ' <span class="sub">not mounted</span>');
   const music = s.musicLibraryOpen ? ['ok', 'Music is running with the iPod library open', 'Music: <b>iPod library open</b>']
     : s.musicRunning ? ['warn', 'Music is running but has a different library open — switch libraries (hold Option while opening Music)', 'Music: <b>other library open</b>']
-    : s.musicDefaultLibraryMatches === true ? ['warn', 'Music is not running; it will open the iPod library when launched', 'Music: <b>not running</b> <span class="sub">iPod library selected</span>']
-    : s.musicDefaultLibraryMatches == null ? ['warn', 'Music is not running, and Convertable cannot read which library it will open (macOS blocks reading Music\'s data until you allow it in System Settings › Privacy & Security)', 'Music: <b>not running</b>']
-    : ['bad', 'Music is not running and would open a different library — hold Option while opening Music and choose the iPod library', 'Music: <b>not running</b> <span class="sub">other library selected</span>'];
+    : ['warn', 'Music is not running — open it with the iPod library to let imports proceed', 'Music: <b>not running</b>'];
   $('#libInd').innerHTML = led(music[0], music[1]) + music[2] + (s.musicPending ? ` · <b>${s.musicPending}</b> waiting for import` : '');
   const L = s.library;
   $('#libTracks').textContent = L.tracks.toLocaleString() + ' tracks';

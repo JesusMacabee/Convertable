@@ -60,15 +60,6 @@ public enum MusicPrefs {
         return normalize(open) == normalize(settings.musicLibraryFileURLString)
     }
 
-    /// Whether the library Music would open on launch (its last-used library, from preferences) is the configured one.
-    /// Meaningful while Music is closed; while it runs, `isConfiguredLibraryOpen` is the live answer.
-    /// nil when the preference cannot be read — macOS's per-app data protection silently blocks the read for an app
-    /// launched normally unless the user has granted it access to Music's data (it works from a Terminal context).
-    public static func configuredLibraryIsDefault(_ settings: Settings) -> Bool? {
-        guard let d = read("library-url") else { return nil }
-        return normalize(d) == normalize(settings.musicLibraryFileURLString)
-    }
-
     public static func normalize(_ s: String) -> String {
         var v = s.removingPercentEncoding ?? s
         if !v.hasSuffix("/") { v += "/" }

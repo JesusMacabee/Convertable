@@ -439,7 +439,6 @@ public actor AppController {
         let musicRunning = MusicPrefs.isRunning
         return StatusSnapshot(state: effective, volume: volText, volumeAvailable: available, protocolName: proto,
                               musicLibraryOpen: musicRunning && MusicPrefs.isConfiguredLibraryOpen(settings), musicRunning: musicRunning,
-                              musicDefaultLibraryMatches: MusicPrefs.configuredLibraryIsDefault(settings),
                               batch: batch,
                               library: LibraryCounts(artists: c.artists, albums: c.albums, tracks: c.active, lossless: c.lossless, lossy: c.lossy, bytes: c.bytes,
                                                      mirrored: c.mirrored, missing: c.missing, backlogAlbums: backlog.albums, backlogBytes: backlog.bytes, settlingAlbums: backlog.settling,
