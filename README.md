@@ -45,6 +45,8 @@ Scripts/build-app.sh --install     # builds Convertable.app, bundles TagLib, ins
 
 On first launch the menu bar icon opens the web dashboard's setup wizard: source folder, mirror folder, Music library, batch budget, encoder profile. Settings live in `~/Library/Application Support/Convertable/settings.json`, state in `state.sqlite` next to it.
 
+The app icon and the dashboard favicon both come from `Assets/AppIcon.png`; after changing it run `Scripts/make-icons.sh`, which writes the `.icns` and embeds the favicon in the dashboard.
+
 Run the tests (with a stall watchdog) using:
 
 ```bash
