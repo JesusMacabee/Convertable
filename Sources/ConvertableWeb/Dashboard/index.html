@@ -30,6 +30,10 @@ header h1 { font-size: 17px; margin: 0; letter-spacing: -.01em; }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--bg); border: 1px solid var(--line); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .dot.idle { background: var(--muted); } .dot.scanning, .dot.converting { background: var(--accent); animation: pulse 1.2s infinite; }
+/* Connection indicators: green circle = working, red square = not working. */
+.led { display: inline-block; width: 9px; height: 9px; margin-right: 5px; vertical-align: -1px; }
+.led.ok { background: var(--ok); border-radius: 50%; }
+.led.bad { background: var(--err); border-radius: 1px; }
 .dot.batchComplete { background: var(--ok); } .dot.paused { background: var(--warn); } .dot.attention, .dot.volumeUnavailable { background: var(--err); }
 @keyframes pulse { 50% { opacity: .35; } }
 header .spacer { flex: 1; }
@@ -270,8 +274,9 @@ function renderStatus(s) {
   const labels = { idle: 'Idle', scanning: 'Scanning', converting: 'Converting', paused: 'Paused', batchComplete: 'Batch complete', attention: 'Needs attention', volumeUnavailable: 'Volume unavailable' };
   $('#stateDot').className = 'dot ' + s.state;
   $('#stateText').textContent = labels[s.state] || s.state;
-  $('#volInd').innerHTML = (s.volumeAvailable ? '● ' : '○ ') + '<b>' + esc(s.volume) + '</b>';
-  $('#libInd').innerHTML = (s.musicLibraryOpen ? '● Music: <b>iPod library open</b>' : (s.musicRunning ? '○ Music: <b>other library open</b>' : '○ Music: <b>not running</b>')) + (s.musicPending ? ` · <b>${s.musicPending}</b> waiting for import` : '');
+  const ind = ok => `<i class="led ${ok ? 'ok' : 'bad'}" title="${ok ? 'Connected' : 'Not available'}"></i>`;
+  $('#volInd').innerHTML = ind(s.volumeAvailable) + '<b>' + esc(s.volume) + '</b>' + (s.volumeAvailable ? '' : ' <span class="sub">not mounted</span>');
+  $('#libInd').innerHTML = ind(s.musicLibraryOpen) + (s.musicLibraryOpen ? 'Music: <b>iPod library open</b>' : (s.musicRunning ? 'Music: <b>other library open</b>' : 'Music: <b>not running</b>')) + (s.musicPending ? ` · <b>${s.musicPending}</b> waiting for import` : '');
   const L = s.library;
   $('#libTracks').textContent = L.tracks.toLocaleString() + ' tracks';
   $('#libDetail').textContent = `${L.artists} artists · ${L.albums} albums · ${fmtBytes(L.bytes)} · ${L.lossless.toLocaleString()} lossless / ${L.lossy.toLocaleString()} lossy` + (L.missing ? ` · ${L.missing} missing` : '');
