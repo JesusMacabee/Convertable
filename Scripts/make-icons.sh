@@ -1,20 +1,27 @@
 #!/bin/zsh
-# Turns Assets/AppIcon.png (square, ideally 1024×1024) into:
-#   Assets/AppIcon.icns                         — the app icon, bundled by build-app.sh
-#   Sources/ConvertableWeb/Dashboard/index.html — favicon + apple-touch-icon embedded as data URLs
+# Turns Assets/AppIcon.png (square, ideally 1024×1024, full-bleed artwork) into:
+#   Assets/AppIcon.icns                         — the app icon in macOS's rounded-square shape with the standard margin
+#   Sources/ConvertableWeb/Dashboard/index.html — favicon (rounded) + apple-touch-icon (full-bleed; iOS masks it) as data URLs
 # Re-run after replacing the PNG; commit the results.
 set -e
 cd "$(dirname "$0")/.."
 SRC=${1:-Assets/AppIcon.png}
 [ -f "$SRC" ] || { echo "no $SRC — save a square PNG there first"; exit 1; }
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+export DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
+mkdir -p build
+[ build/round-icon -nt Scripts/round-icon.swift ] || swiftc -O Scripts/round-icon.swift -o build/round-icon
+build/round-icon "$SRC" "$TMP/rounded.png" 1024
 mkdir "$TMP/AppIcon.iconset"
 for s in 16 32 128 256 512; do
-  sips -z $s $s "$SRC" --out "$TMP/AppIcon.iconset/icon_${s}x${s}.png" >/dev/null
-  sips -z $((s*2)) $((s*2)) "$SRC" --out "$TMP/AppIcon.iconset/icon_${s}x${s}@2x.png" >/dev/null
+  sips -z $s $s "$TMP/rounded.png" --out "$TMP/AppIcon.iconset/icon_${s}x${s}.png" >/dev/null
+  sips -z $((s*2)) $((s*2)) "$TMP/rounded.png" --out "$TMP/AppIcon.iconset/icon_${s}x${s}@2x.png" >/dev/null
 done
 iconutil -c icns "$TMP/AppIcon.iconset" -o Assets/AppIcon.icns
-sips -z 64 64 "$SRC" --out "$TMP/fav.png" >/dev/null
+# Favicon: rounded but without the margin (tabs are tiny). Touch icon: full-bleed, iOS applies its own mask.
+build/round-icon "$SRC" "$TMP/fav-full.png" 1024
+sips -c 824 824 "$TMP/fav-full.png" --out "$TMP/fav-crop.png" >/dev/null
+sips -z 64 64 "$TMP/fav-crop.png" --out "$TMP/fav.png" >/dev/null
 sips -z 180 180 "$SRC" --out "$TMP/touch.png" >/dev/null
 FAV=$(base64 -i "$TMP/fav.png" | tr -d '\n'); TOUCH=$(base64 -i "$TMP/touch.png" | tr -d '\n')
 python3 - "$FAV" "$TOUCH" <<'PY'
