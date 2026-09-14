@@ -34,6 +34,7 @@ header h1 { font-size: 17px; margin: 0; letter-spacing: -.01em; }
 .led { display: inline-block; width: 9px; height: 9px; margin-right: 5px; vertical-align: -1px; }
 .led.ok { background: var(--ok); border-radius: 50%; }
 .led.bad { background: var(--err); border-radius: 1px; }
+.led.warn { width: 0; height: 0; background: none; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 9px solid var(--warn); }
 .dot.batchComplete { background: var(--ok); } .dot.paused { background: var(--warn); } .dot.attention, .dot.volumeUnavailable { background: var(--err); }
 @keyframes pulse { 50% { opacity: .35; } }
 header .spacer { flex: 1; }
@@ -274,9 +275,15 @@ function renderStatus(s) {
   const labels = { idle: 'Idle', scanning: 'Scanning', converting: 'Converting', paused: 'Paused', batchComplete: 'Batch complete', attention: 'Needs attention', volumeUnavailable: 'Volume unavailable' };
   $('#stateDot').className = 'dot ' + s.state;
   $('#stateText').textContent = labels[s.state] || s.state;
-  const ind = ok => `<i class="led ${ok ? 'ok' : 'bad'}" title="${ok ? 'Connected' : 'Not available'}"></i>`;
-  $('#volInd').innerHTML = ind(s.volumeAvailable) + '<b>' + esc(s.volume) + '</b>' + (s.volumeAvailable ? '' : ' <span class="sub">not mounted</span>');
-  $('#libInd').innerHTML = ind(s.musicLibraryOpen) + (s.musicLibraryOpen ? 'Music: <b>iPod library open</b>' : (s.musicRunning ? 'Music: <b>other library open</b>' : 'Music: <b>not running</b>')) + (s.musicPending ? ` · <b>${s.musicPending}</b> waiting for import` : '');
+  // Indicators: green circle = working, yellow triangle = needs a hand, red square = not working.
+  const led = (level, title) => `<i class="led ${level}" title="${esc(title)}"></i>`;
+  $('#volInd').innerHTML = led(s.volumeAvailable ? 'ok' : 'bad', s.volumeAvailable ? 'Share mounted' : 'Share not mounted') + '<b>' + esc(s.volume) + '</b>' + (s.volumeAvailable ? '' : ' <span class="sub">not mounted</span>');
+  const music = s.musicLibraryOpen ? ['ok', 'Music is running with the iPod library open', 'Music: <b>iPod library open</b>']
+    : s.musicRunning ? ['warn', 'Music is running but has a different library open — switch libraries (hold Option while opening Music)', 'Music: <b>other library open</b>']
+    : s.musicDefaultLibraryMatches === true ? ['warn', 'Music is not running; it will open the iPod library when launched', 'Music: <b>not running</b> <span class="sub">iPod library selected</span>']
+    : s.musicDefaultLibraryMatches == null ? ['warn', 'Music is not running, and Convertable cannot read which library it will open (macOS blocks reading Music\'s data until you allow it in System Settings › Privacy & Security)', 'Music: <b>not running</b>']
+    : ['bad', 'Music is not running and would open a different library — hold Option while opening Music and choose the iPod library', 'Music: <b>not running</b> <span class="sub">other library selected</span>'];
+  $('#libInd').innerHTML = led(music[0], music[1]) + music[2] + (s.musicPending ? ` · <b>${s.musicPending}</b> waiting for import` : '');
   const L = s.library;
   $('#libTracks').textContent = L.tracks.toLocaleString() + ' tracks';
   $('#libDetail').textContent = `${L.artists} artists · ${L.albums} albums · ${fmtBytes(L.bytes)} · ${L.lossless.toLocaleString()} lossless / ${L.lossy.toLocaleString()} lossy` + (L.missing ? ` · ${L.missing} missing` : '');

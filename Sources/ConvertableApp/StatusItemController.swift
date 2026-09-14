@@ -74,9 +74,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         guard let s = snapshot else { menu.addItem(disabled("Starting…")); return }
 
         menu.addItem(disabled(Self.label(s.state)))
-        menu.addItem(indicator(ok: s.volumeAvailable, s.volumeAvailable ? s.volume : "\(s.volume) — not mounted"))
-        menu.addItem(indicator(ok: s.musicLibraryOpen, (s.musicLibraryOpen ? "Music: iPod library open" : (s.musicRunning ? "Music: other library open" : "Music not running"))
-                               + (s.musicPending > 0 ? " · \(s.musicPending) waiting" : "")))
+        menu.addItem(indicator(s.volumeAvailable ? .ok : .bad, s.volumeAvailable ? s.volume : "\(s.volume) — not mounted"))
+        let music: (Indicator, String) = s.musicLibraryOpen ? (.ok, "Music: iPod library open")
+            : s.musicRunning ? (.warn, "Music: other library open")
+            : s.musicDefaultLibraryMatches == true ? (.warn, "Music not running (iPod library selected)")
+            : s.musicDefaultLibraryMatches == nil ? (.warn, "Music not running")
+            : (.bad, "Music not running — other library selected")
+        menu.addItem(indicator(music.0, music.1 + (s.musicPending > 0 ? " · \(s.musicPending) waiting" : "")))
         if let b = batch ?? s.batch, s.state == .converting || s.state == .paused {
             menu.addItem(.separator())
             menu.addItem(disabled("Batch #\(b.id): \(b.albumsDone)/\(b.albumsTotal) albums · \(b.tracksDone)/\(b.tracksTotal) tracks"))
@@ -112,13 +116,21 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     private func disabled(_ title: String) -> NSMenuItem { let i = NSMenuItem(title: title, action: nil, keyEquivalent: ""); i.isEnabled = false; return i }
 
-    /// Informational row with a connection indicator: green circle = working, red square = not working.
-    /// Disabled items are drawn grey (the indicator would vanish), so the row is enabled but has no action.
-    private func indicator(ok: Bool, _ title: String) -> NSMenuItem {
+    enum Indicator { case ok, warn, bad }
+
+    /// Informational row with a connection indicator: green circle = working, yellow triangle = needs a hand,
+    /// red square = not working. Disabled items are drawn grey (the indicator would vanish), so the row is
+    /// enabled but has no action.
+    private func indicator(_ level: Indicator, _ title: String) -> NSMenuItem {
         let i = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         i.isEnabled = true
-        let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .regular).applying(.init(paletteColors: [ok ? .systemGreen : .systemRed]))
-        i.image = NSImage(systemSymbolName: ok ? "circle.fill" : "square.fill", accessibilityDescription: ok ? "connected" : "not available")?.withSymbolConfiguration(config)
+        let (symbol, color, label): (String, NSColor, String) = switch level {
+        case .ok: ("circle.fill", .systemGreen, "connected")
+        case .warn: ("exclamationmark.triangle.fill", .systemYellow, "needs attention")
+        case .bad: ("square.fill", .systemRed, "not available")
+        }
+        let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .regular).applying(.init(paletteColors: [color]))
+        i.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?.withSymbolConfiguration(config)
         return i
     }
     private func action(_ title: String, _ sel: Selector, key: String = "") -> NSMenuItem {

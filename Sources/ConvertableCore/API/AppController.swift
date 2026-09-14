@@ -436,8 +436,10 @@ public actor AppController {
         let c = (try? store.counts()) ?? Store.Counts(active: 0, missing: 0, lossless: 0, lossy: 0, bytes: 0, mirrored: 0, artists: 0, albums: 0, directories: 0)
         let backlog = backlogSummary()
         let effective: AppState = !available ? .volumeUnavailable : (alerts.contains { $0.level == "error" } ? .attention : state)
+        let musicRunning = MusicPrefs.isRunning
         return StatusSnapshot(state: effective, volume: volText, volumeAvailable: available, protocolName: proto,
-                              musicLibraryOpen: MusicPrefs.isConfiguredLibraryOpen(settings), musicRunning: MusicPrefs.isRunning,
+                              musicLibraryOpen: musicRunning && MusicPrefs.isConfiguredLibraryOpen(settings), musicRunning: musicRunning,
+                              musicDefaultLibraryMatches: MusicPrefs.configuredLibraryIsDefault(settings),
                               batch: batch,
                               library: LibraryCounts(artists: c.artists, albums: c.albums, tracks: c.active, lossless: c.lossless, lossy: c.lossy, bytes: c.bytes,
                                                      mirrored: c.mirrored, missing: c.missing, backlogAlbums: backlog.albums, backlogBytes: backlog.bytes, settlingAlbums: backlog.settling,
