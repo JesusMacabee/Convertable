@@ -87,6 +87,7 @@ public struct PlanPreview: Codable, Equatable, Sendable {
     public var settling: Int, alreadyMirrored: Int, skipped: Int
     public var needsTagging: Int = 0, auditing: Int = 0, ignored: Int = 0
     public var estimatedSeconds: Double
+    public var estimateBasis: String = ""   // where the time estimate comes from (measured rate vs default assumption)
 }
 
 public struct BatchRow: Codable, Equatable, Sendable {

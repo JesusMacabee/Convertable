@@ -427,7 +427,8 @@ $('#btnPreview').onclick = async () => {
   const li = a => `<li>${a.pinned ? '★ ' : ''}<b>${esc(a.artist)}</b> — ${esc(a.album)} <span class="sub">${a.tracks} tracks · ${fmtBytes(a.bytesIn)} → ~${fmtBytes(a.estimatedOut)}</span></li>`;
   const card = $('#previewCard'); card.hidden = false;
   card.innerHTML = `<h3>Batch preview</h3>
-    <div class="row"><span class="big">${p.albums.length} albums</span><span class="sub">${p.tracks} tracks · ${fmtBytes(p.bytesIn)} in → ~${fmtBytes(p.estimatedOut)} out · ~${fmtDur(p.estimatedSeconds)}</span></div>
+    <div class="row"><span class="big">${p.albums.length} albums</span><span class="sub">${p.tracks} tracks · ${fmtBytes(p.bytesIn)} in → ~${fmtBytes(p.estimatedOut)} out · ~${fmtDur(p.estimatedSeconds)} <span title="${esc(p.estimateBasis)}" style="cursor:help">ⓘ</span></span></div>
+    <div class="sub">Time estimate ${esc(p.estimateBasis)}.</div>
     <ul>${p.albums.map(li).join('') || '<li class="sub">Nothing eligible in this selection.</li>'}</ul>
     ${p.overflow.length ? `<div class="alert warn"><span><b>${p.overflow.length} more albums (${fmtBytes(p.overflowBytes)}) are beyond the cap.</b> Convert all ${fmtBytes(p.bytesIn + p.overflowBytes)}, or respect the cap and stop after the list above.</span></div><ul>${p.overflow.map(li).join('')}</ul>` : ''}
     ${p.backlogAlbums ? `<div class="sub">After this batch: ${p.backlogAlbums} albums / ${fmtBytes(p.backlogBytes)} remain in the backlog.</div>` : ''}

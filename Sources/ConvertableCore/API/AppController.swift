@@ -518,8 +518,17 @@ public actor AppController {
             return .init(artistDir: a.key.artistDir, albumDir: a.key.albumDir, artist: a.displayArtist, album: a.displayAlbum, tracks: a.tracks.count, bytesIn: a.bytesIn, estimatedOut: est, pinned: a.pinned)
         }
         let albums = plan.albums.map(row), overflow = plan.overflow.map(row)
-        // ~2 s of encode per track at the measured local rate, divided by parallelism, plus share copy time.
-        let seconds = Double(plan.trackCount) * 2.5 / Double(max(1, settings.encodeConcurrency)) + Double(plan.bytesIn) / 60_000_000
+        // Time: the rate this installation has actually achieved (learned from finished batches, newest weighted most),
+        // which folds in the share speed, encoding, tagging and publishing. Before any batch has finished, fall back to
+        // ~2.5 s of encode per track divided by parallelism plus reading the source at an assumed 60 MB/s.
+        let seconds: Double, basis: String
+        if let t = try? store.learnedThroughput(), t.bytesPerSecond > 0 {
+            seconds = Double(plan.bytesIn) / t.bytesPerSecond
+            basis = "at \(ByteCount.string(Int64(t.bytesPerSecond)))/s, measured over your last \(t.batches) batch\(t.batches == 1 ? "" : "es")"
+        } else {
+            seconds = Double(plan.trackCount) * 2.5 / Double(max(1, settings.encodeConcurrency)) + Double(plan.bytesIn) / 60_000_000
+            basis = "assuming 60 MB/s from the share — no finished batches to learn from yet"
+        }
         return PlanPreview(selection: selection, albums: albums, overflow: overflow, bytesIn: plan.bytesIn,
                            estimatedOut: albums.reduce(0) { $0 + $1.estimatedOut }, tracks: plan.trackCount,
                            overflowBytes: plan.overflowBytes, backlogAlbums: plan.backlogAlbums, backlogBytes: plan.backlogBytes,
@@ -528,7 +537,7 @@ public actor AppController {
                            skipped: plan.ineligible.filter { $0.1 == .allSkipped }.count,
                            needsTagging: plan.ineligible.filter { if case .needsTagging = $0.1 { return true }; return false }.count,
                            auditing: plan.ineligible.filter { $0.1 == .auditing }.count,
-                           ignored: plan.ineligible.filter { $0.1 == .ignored }.count, estimatedSeconds: seconds)
+                           ignored: plan.ineligible.filter { $0.1 == .ignored }.count, estimatedSeconds: seconds, estimateBasis: basis)
     }
 
     public func batches(limit: Int = 50) -> [BatchRow] {

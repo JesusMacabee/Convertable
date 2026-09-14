@@ -311,6 +311,32 @@ public final class Store: @unchecked Sendable {
         else { try db.run("DELETE FROM pins WHERE artist_dir=?", [.text(artistDir)]) }
     }
 
+    // MARK: Learned throughput
+
+    public struct Throughput: Equatable, Sendable {
+        public var bytesPerSecond: Double
+        public var batches: Int        // finished batches the figure is based on
+        public var newestAt: Double    // finished_at of the most recent one
+    }
+
+    /// The real end-to-end rate this installation achieves: bytes of source processed per second of batch wall time,
+    /// covering share reads, encoding, tagging, verification and publishing. Learned from finished batches and weighted
+    /// toward the newest ones, so a network change shows up in the estimate after a batch or two. Tiny batches
+    /// (under 100 MB or 20 s) are noise and ignored. nil until at least one real batch has finished.
+    public func learnedThroughput(limit: Int = 12, decay: Double = 0.6) throws -> Throughput? {
+        let rows = try db.query("""
+            SELECT bytes_in, finished_at - started_at, finished_at FROM batches
+            WHERE finished_at IS NOT NULL AND bytes_in >= 100000000 AND finished_at - started_at >= 20
+            ORDER BY id DESC LIMIT ?
+            """, [.integer(Int64(limit))]) { ($0.int(0)!, $0.double(1)!, $0.double(2)!) }
+        guard !rows.isEmpty else { return nil }
+        // Weighted mean of each batch's own rate (not of totals), so one long slow batch cannot dominate several
+        // fast recent ones — the estimate follows a network change after a batch or two.
+        var sum = 0.0, weights = 0.0, weight = 1.0
+        for (b, s, _) in rows { sum += Double(b) / s * weight; weights += weight; weight *= decay }
+        return Throughput(bytesPerSecond: sum / weights, batches: rows.count, newestAt: rows[0].2)
+    }
+
     // MARK: Ignored albums
 
     public func ignoredAlbums() throws -> Set<AlbumKey> {
