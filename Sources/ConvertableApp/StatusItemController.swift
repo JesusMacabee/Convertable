@@ -108,6 +108,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         lal.state = LaunchAtLogin.isEnabled ? .on : .off
         lal.isEnabled = LaunchAtLogin.isAvailable
         menu.addItem(lal)
+        menu.addItem(action("Send Test Notification", #selector(testNotification)))
         menu.addItem(.separator())
         menu.addItem(action("Quit Convertable", #selector(quit), key: "q"))
     }
@@ -136,6 +137,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     // MARK: Actions
+
+    @objc func testNotification() {
+        notifier.post(title: "Convertable", body: "Notifications are working. You'll hear from me when a batch finishes, the share disappears, or something needs attention.", id: "test")
+    }
 
     @objc private func pause() { Task { try? await controller.perform(.stop) } }
     @objc private func startNext() {
