@@ -10,6 +10,10 @@ enum Dashboard {
         candidates.append(Bundle.main.bundleURL.appendingPathComponent(name))
         if let exe = Bundle.main.executableURL { candidates.append(exe.deletingLastPathComponent().appendingPathComponent(name)) }
         for c in candidates {
+            // Bundle(url:) resolves both layouts SwiftPM has produced: flat (`Dashboard/index.html` at the top,
+            // older toolchains) and a real macOS bundle (`Contents/Resources/Dashboard/index.html`, Xcode 27+).
+            if let b = Bundle(url: c), let url = b.url(forResource: "index", withExtension: "html", subdirectory: "Dashboard"),
+               let s = try? String(contentsOf: url, encoding: .utf8) { return s }
             let f = c.appendingPathComponent("Dashboard/index.html")
             if let s = try? String(contentsOf: f, encoding: .utf8) { return s }
         }
