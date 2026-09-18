@@ -54,7 +54,7 @@ public actor AppController {
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.schedulerTick()
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                try? await Task.sleep(for: .seconds(30))
             }
         }
     }
@@ -72,7 +72,7 @@ public actor AppController {
         var vs = await Task.detached(priority: .utility) { VolumeGate.check(root: root, timeout: 15) }.value
         if case .unresponsive = vs {
             // One slow listing is not an outage (seen once at process start). Confirm before alarming.
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            try? await Task.sleep(for: .seconds(5))
             let again = await Task.detached(priority: .utility) { VolumeGate.check(root: root, timeout: 15) }.value
             try? store.log("debug", "volume", String(format: "probe slow (%.1f s); recheck → %@", Date().timeIntervalSince(t0), "\(again)"))
             vs = again

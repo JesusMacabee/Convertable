@@ -35,7 +35,7 @@ public struct LegacyIndexer {
         var seenPaths: Set<String> = []
         for root in roots where fm.fileExists(atPath: root) {
             guard let it = fm.enumerator(at: URL(fileURLWithPath: root), includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else { continue }
-            for case let url as URL in it {
+            while let url = it.nextObject() as? URL {   // `for … in` on NSEnumerator is unavailable in async code
                 if isCancelled() { return res }
                 guard let v = try? url.resourceValues(forKeys: Set(keys)), v.isRegularFile == true else { continue }
                 let ext = "." + url.pathExtension.lowercased()

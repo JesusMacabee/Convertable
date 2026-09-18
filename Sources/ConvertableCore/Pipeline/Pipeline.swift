@@ -101,7 +101,7 @@ public final class Pipeline: @unchecked Sendable {
         summary.seconds = Date().timeIntervalSince(t0)
         if summary.endedBy == "empty", plan.backlogAlbums > 0 || !plan.overflow.isEmpty { summary.endedBy = "budget" }
         if let batchID {
-            try? store(sync: { s in
+            _ = try? store(sync: { s in
                 try s.db.run("UPDATE batches SET bytes_in=?, bytes_out=?, files_done=?, finished_at=?, ended_by=? WHERE id=?",
                              [.integer(summary.bytesIn), .integer(summary.bytesOut), .integer(Int64(summary.tracksDone)),
                               .real(Date().timeIntervalSince1970), .text(summary.endedBy), .integer(batchID)])
@@ -128,7 +128,7 @@ public final class Pipeline: @unchecked Sendable {
             } catch {
                 lastError = "\(error)"
                 try? store(sync: { try $0.log("warn", "pipeline", "attempt \(attempt) failed: \(lastError)", relPath: track.source.relPath) })
-                if attempt < config.maxAttempts { try? await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000) }
+                if attempt < config.maxAttempts { try? await Task.sleep(for: .seconds(2 * attempt)) }
             }
         }
         try? store(sync: { try $0.log("error", "pipeline", "gave up: \(lastError)", relPath: track.source.relPath) })

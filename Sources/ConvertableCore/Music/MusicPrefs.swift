@@ -3,19 +3,16 @@ import Foundation
 /// What Music.app itself says about its state, read from its preferences — no AppleScript needed.
 public enum MusicPrefs {
     static let domain = "com.apple.Music"
-    private static let lock = NSLock()
-    private static var cache: [String: (at: Double, value: String?)] = [:]
+    private static let cache = Locked<[String: (at: Double, value: String?)]>([:])
 
     /// Never open Music's own files in-process: macOS per-app data protection can hold such an `open()`
     /// indefinitely while a privacy decision is pending, which would freeze the controller. Everything here
     /// goes through short-lived subprocesses with timeouts, and is cached for 5 s because status() asks often.
     static func cached(_ key: String, _ compute: () -> String?) -> String? {
         let now = Date().timeIntervalSince1970
-        lock.lock()
-        if let c = cache[key], now - c.at < 5 { lock.unlock(); return c.value }
-        lock.unlock()
+        if let c = cache.withLock({ $0[key] }), now - c.at < 5 { return c.value }
         let value = compute()
-        lock.lock(); cache[key] = (now, value); lock.unlock()
+        cache.withLock { $0[key] = (now, value) }
         return value
     }
 

@@ -96,18 +96,19 @@ public enum Doctor {
         return out
     }
 
+    /// Free means nothing accepts connections on it. A bind test is the wrong probe: with SO_REUSEADDR it
+    /// succeeds against a wildcard listener (the dashboard with LAN access on), and without it a lingering
+    /// TIME_WAIT socket makes a free port look busy. A connect attempt is refused exactly when the port is free.
     static func portIsFree(_ port: Int) -> Bool {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { return false }
         defer { close(fd) }
-        var on: Int32 = 1
-        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, socklen_t(MemoryLayout<Int32>.size))
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
         addr.sin_port = in_port_t(port).bigEndian
         addr.sin_addr.s_addr = inet_addr("127.0.0.1")
-        let rc = withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
-        return rc == 0
+        let rc = withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
+        return rc != 0 && errno == ECONNREFUSED
     }
 }
 

@@ -76,12 +76,12 @@ public enum VolumeGate {
     /// A stalled network mount can hang a plain listing indefinitely; bound it.
     static func probeListing(_ path: String, timeout: TimeInterval) -> Bool {
         let done = DispatchSemaphore(value: 0)
-        var ok = false
+        let ok = Locked(false)
         DispatchQueue.global(qos: .utility).async {
-            ok = (try? FileManager.default.contentsOfDirectory(atPath: path)) != nil
+            ok.value = (try? FileManager.default.contentsOfDirectory(atPath: path)) != nil
             done.signal()
         }
-        return done.wait(timeout: .now() + timeout) == .success && ok
+        return done.wait(timeout: .now() + timeout) == .success && ok.value
     }
 
     /// Free bytes on the filesystem containing `path`.

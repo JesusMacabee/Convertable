@@ -1,6 +1,7 @@
 #!/bin/zsh
-# Runs the test suite with a stall watchdog: if no test starts for 40 s the stuck process is sampled
-# (stacks in /tmp/convertable-sample.txt) and killed, instead of hanging a CI run forever.
+# Runs the test suite with a stall watchdog: once tests are running, if no test starts for 40 s the stuck
+# process is sampled (stacks in /tmp/convertable-sample.txt) and killed, instead of hanging a CI run forever.
+# The build phase is not timed — a clean rebuild after a dependency update takes minutes.
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 cd "$(dirname "$0")/.."
 LOG=/tmp/convertable-test.log
@@ -10,7 +11,7 @@ last=""; same=0
 while kill -0 $TP 2>/dev/null; do
   sleep 5
   cur=$(grep -c "started\." "$LOG")
-  if [ "$cur" = "$last" ]; then same=$((same+1)); else same=0; fi
+  if [ "$cur" = "$last" ] && [ "$cur" -gt 0 ]; then same=$((same+1)); else same=0; fi
   last=$cur
   if [ $same -ge 8 ]; then
     echo "STALLED at:"; grep "started\." "$LOG" | tail -1

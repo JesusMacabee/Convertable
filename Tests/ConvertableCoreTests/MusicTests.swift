@@ -86,7 +86,7 @@ final class MusicImporterTests: XCTestCase {
         XCTAssertEqual(o.added, 2); XCTAssertEqual(o.failed, 0); XCTAssertNil(o.disabledReason)
         let pids = try store.db.query("SELECT music_persistent_id FROM outputs ORDER BY id") { $0.text(0) }
         XCTAssertEqual(pids, ["PID1", "PID2"])
-        XCTAssertEqual(try importer(m).pendingCount(), 0)
+        XCTAssertEqual(importer(m).pendingCount(), 0)
     }
 
     func testDrainWaitsWhenWrongLibraryIsOpen() throws {

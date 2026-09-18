@@ -43,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     NSLog("Convertable: dashboard server failed: %@", "\(error)")
                     await MainActor.run { self.statusItem.serverError = "\(error) — retrying" }
                 }
-                try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
+                try? await Task.sleep(for: .seconds(delay))
                 delay = min(delay * 2, 60)
             }
         }
@@ -52,10 +52,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         eventTask = Task { [weak self] in
             guard let self else { return }
             let (_, stream) = await controller.bus.subscribe()
-            await self.apply(await controller.status())
+            self.apply(await controller.status())
             for await ev in stream {
                 switch ev {
-                case let .status(s): await self.apply(s)
+                case let .status(s): self.apply(s)
                 case let .batchProgress(b): await MainActor.run { self.statusItem.batch = b }
                 default: break
                 }

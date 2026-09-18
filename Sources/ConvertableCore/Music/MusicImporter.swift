@@ -3,7 +3,7 @@ import Foundation
 /// Hands finished albums to Music.app, only when the configured library is the open one.
 /// An album is imported when every source file that needs work has a verified output — Music
 /// never sees a half-converted album.
-public struct MusicImporter {
+public struct MusicImporter: Sendable {
     public struct Outcome: Sendable {
         public var added = 0, failed = 0, skipped = 0
         public var disabledReason: String?
@@ -15,9 +15,9 @@ public struct MusicImporter {
     public let profile: Profile
     public let bridge: MusicBridge
     /// Replaceable in tests; the default reads Music's preferences.
-    public var gate: () -> Result<Void, MusicError>
+    public var gate: @Sendable () -> Result<Void, MusicError>
 
-    public init(store: Store, settings: Settings, profile: Profile, bridge: MusicBridge, gate: (() -> Result<Void, MusicError>)? = nil) {
+    public init(store: Store, settings: Settings, profile: Profile, bridge: MusicBridge, gate: (@Sendable () -> Result<Void, MusicError>)? = nil) {
         self.store = store; self.settings = settings; self.profile = profile; self.bridge = bridge
         self.gate = gate ?? { MusicImporter.defaultGate(settings) }
     }
@@ -98,7 +98,7 @@ public struct MusicImporter {
                     out.added += 1
                 } catch {
                     out.failed += 1
-                    try? store.db.run("UPDATE outputs SET music_attempts=COALESCE(music_attempts,0)+1, music_error=? WHERE id=?", [.text("\(error)"), .integer(item.output.id)])
+                    _ = try? store.db.run("UPDATE outputs SET music_attempts=COALESCE(music_attempts,0)+1, music_error=? WHERE id=?", [.text("\(error)"), .integer(item.output.id)])
                     try? store.log("warn", "music", "add failed: \(error)", relPath: item.source.relPath)
                     // Music being busy (iPod sync, dialog open) fails everything; don't hammer it.
                     if out.failed >= 3 { out.messages.append("Music is refusing adds; will retry later"); return out }
@@ -148,7 +148,7 @@ public struct MusicImporter {
                 else {
                     out.failed += remaining.count
                     let json = String(decoding: (try? JSONEncoder().encode(remaining)) ?? Data("[]".utf8), as: UTF8.self)
-                    try? store.db.run("UPDATE proposals SET items_json=? WHERE id=?", [.text(json), .integer(p.id)])
+                    _ = try? store.db.run("UPDATE proposals SET items_json=? WHERE id=?", [.text(json), .integer(p.id)])
                 }
             }
             for p in approved where p.kind == "dead" {
@@ -159,7 +159,7 @@ public struct MusicImporter {
                     catch { if !"\(error)".contains("get") { remaining.append(item); out.failed += 1 } }
                 }
                 if remaining.isEmpty { try? store.setProposalState(p.id, "done") }
-                else { let json = String(decoding: (try? JSONEncoder().encode(remaining)) ?? Data("[]".utf8), as: UTF8.self); try? store.db.run("UPDATE proposals SET items_json=? WHERE id=?", [.text(json), .integer(p.id)]) }
+                else { let json = String(decoding: (try? JSONEncoder().encode(remaining)) ?? Data("[]".utf8), as: UTF8.self); _ = try? store.db.run("UPDATE proposals SET items_json=? WHERE id=?", [.text(json), .integer(p.id)]) }
             }
             for p in approved where p.kind == "remove" {
                 var remaining: [Store.ProposalItem] = []
@@ -175,7 +175,7 @@ public struct MusicImporter {
                     try? store.setProposalState(p.id, "done")
                 } else if remaining.count != p.items.filter({ $0.musicPersistentID != nil }).count {
                     let json = String(decoding: (try? JSONEncoder().encode(remaining)) ?? Data("[]".utf8), as: UTF8.self)
-                    try? store.db.run("UPDATE proposals SET items_json=? WHERE id=?", [.text(json), .integer(p.id)])
+                    _ = try? store.db.run("UPDATE proposals SET items_json=? WHERE id=?", [.text(json), .integer(p.id)])
                 }
             }
             _ = reviewer

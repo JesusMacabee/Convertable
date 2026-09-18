@@ -398,3 +398,13 @@ Shown automatically (dashboard opens on it, menu bar offers "Finish Setup…") u
 7. Import method defaults to *Reference in place via AppleScript*; Auto-Add hand-off is available as an option.
 8. v1 encoder backends: `afconvert` (AAC/ALAC/PCM), `lame` (MP3), `flac` (FLAC); Opus/Vorbis/ffmpeg-decoding are pluggable later.
 9. Auto-mounting the share from a URL is off by default; the app normally expects the volume to be mounted at login as today.
+
+## 18. macOS 27 / Xcode 27 upgrade (2026-09-18)
+
+What actually changed for this app when the Mac moved to macOS 27 and Xcode 27 (Swift 6.4, SDK 27):
+
+- **Nothing at the framework level.** The SDK adds no macOS 27-only API to UserNotifications, ServiceManagement or Foundation, and AppKit's additions (view corner configuration, TextKit viewport hooks) don't apply to a status-item app. The `afconvert`, `osascript`, `lsof` and `getmntinfo` surfaces are unchanged.
+- **Swift 6 language mode is now on** (`swift-tools-version: 6.0`). It cost five real fixes, all shared-mutable-state that the old mode let through: `MusicPrefs` cache (static var behind an `NSLock`), the two pipe drains in `Tools.run` and the listing probe in `VolumeGate` (a `var` mutated from a GCD closure) — all now go through a small `Locked<Value>` box; `MusicImporter` is `Sendable` with a `@Sendable` gate closure so it can cross into the detached import task; and a `for … in` over `FileManager`'s enumerator inside an async function (unavailable in Swift 6) became `while let … nextObject()`. `Mutex` from Synchronization would replace `Locked`, but needs macOS 15 and the deployment target is 14.
+- **New compiler diagnostics** (unused `try?` results, redundant `await`) were cleaned up, and `Task.sleep(nanoseconds:)` calls became `Task.sleep(for:)`.
+- **Dependencies:** Hummingbird 2.26 and ArgumentParser 1.8 were already current; the NIO/log/http-types transitive set was updated.
+- **Runtime after the upgrade:** the reboot left the SMB share unmounted (auto-mount is off by design; Finder remounted it with the Keychain password and the app recovered on its own — "share available again"). `convertctl doctor` passes every check on macOS 27; share cold-open 16 ms, warm 6 ms; bulk reads still 11.6 MB/s, i.e. the eero wireless backhaul, not the OS, remains the ceiling. Homebrew's TagLib bottle is built with `minos 26.0`, so the bundled `.app` runs on macOS 26+ even though the code targets 14.

@@ -36,17 +36,17 @@ public enum Tools {
             try p.run()
         }
         // Drain concurrently so a chatty tool can't deadlock on a full pipe.
-        var o = Data(), e = Data()
+        let o = Locked(Data()), e = Locked(Data())
         let group = DispatchGroup()
-        group.enter(); DispatchQueue.global().async { o = out.fileHandleForReading.readDataToEndOfFile(); group.leave() }
-        group.enter(); DispatchQueue.global().async { e = err.fileHandleForReading.readDataToEndOfFile(); group.leave() }
+        group.enter(); DispatchQueue.global().async { o.value = out.fileHandleForReading.readDataToEndOfFile(); group.leave() }
+        group.enter(); DispatchQueue.global().async { e.value = err.fileHandleForReading.readDataToEndOfFile(); group.leave() }
         let deadline = DispatchTime.now() + timeout
         if group.wait(timeout: deadline) == .timedOut {
             p.terminate()
             throw ToolError.timeout(path, args)
         }
         p.waitUntilExit()
-        return (p.terminationStatus, String(decoding: o, as: UTF8.self), String(decoding: e, as: UTF8.self))
+        return (p.terminationStatus, String(decoding: o.value, as: UTF8.self), String(decoding: e.value, as: UTF8.self))
     }
 
     public enum ToolError: Error, CustomStringConvertible {

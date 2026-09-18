@@ -29,7 +29,8 @@ Apple Music library  →  iPod Classic
 
 ## Requirements
 
-- macOS 14 or later (built and run on macOS 26). Xcode is needed to build, because the Command Line Tools alone ship no XCTest.
+- macOS 14 or later (built and run on macOS 27 with Xcode 27 / Swift 6.4; the code is in Swift 6 language mode). Xcode is needed to build, because the Command Line Tools alone ship no XCTest, and its license must be accepted once (`sudo xcodebuild -license accept`).
+- The TagLib dylibs bundled into the `.app` come from Homebrew, which builds them for the macOS you are on, so the built app runs on that macOS version or newer.
 - Homebrew `taglib`, `pkgconf`, and optionally `lame` and `flac` for the non-AAC profiles:
   ```bash
   Scripts/install-deps.sh
@@ -71,7 +72,7 @@ Sources/ConvertableWeb    Hummingbird server + the single-file dashboard (Dashbo
 Sources/ConvertableApp    menu bar app (NSStatusItem, notifications, launch at login)
 Sources/convertctl        command line
 Sources/CTagLib           TagLib C bindings
-Tests/                    100 unit and integration tests (real audio fixtures, real afconvert)
+Tests/                    102 unit and integration tests (real audio fixtures, real afconvert)
 docs/DESIGN.md            the full design and build log, decisions and measurements included
 ```
 

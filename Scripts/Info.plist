@@ -10,7 +10,7 @@
     <key>CFBundleName</key><string>Convertable</string>
     <key>CFBundleDisplayName</key><string>Convertable</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.5.0</string>
+    <key>CFBundleShortVersionString</key><string>0.6.0</string>
     <key>CFBundleVersion</key><string>VERSION_PLACEHOLDER</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>

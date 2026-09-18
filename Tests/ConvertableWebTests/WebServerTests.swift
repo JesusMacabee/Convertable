@@ -4,6 +4,10 @@ import HummingbirdTesting
 @testable import ConvertableWeb
 @testable import ConvertableCore
 
+// File-scope so the request closures (which are @Sendable under Swift 6) don't have to capture the test case.
+private let auth: HTTPFields = { var h = HTTPFields(); h[.authorization] = "Bearer test-token-123"; return h }()
+private let authMut: HTTPFields = { var h = auth; h[.init("X-Convertable")!] = "1"; h[.contentType] = "application/json"; return h }()
+
 final class WebServerTests: XCTestCase {
     var settings: Settings!
     var controller: AppController!
@@ -27,9 +31,6 @@ final class WebServerTests: XCTestCase {
         controller = AppController(settings: settings, store: store)
         server = WebServer(controller: controller, settings: settings)
     }
-
-    var auth: HTTPFields { var h = HTTPFields(); h[.authorization] = "Bearer test-token-123"; return h }
-    var authMut: HTTPFields { var h = auth; h[.init("X-Convertable")!] = "1"; h[.contentType] = "application/json"; return h }
 
     func testHealthNeedsNoAuth() async throws {
         try await server.buildApplication().test(.router) { client in

@@ -181,7 +181,7 @@ public struct WebServer: Sendable {
                         cont.yield(ByteBuffer(string: "data: \(String(decoding: s, as: UTF8.self))\n\n"))
                     }
                     let heartbeat = Task {
-                        while !Task.isCancelled { try? await Task.sleep(nanoseconds: 15_000_000_000); cont.yield(ByteBuffer(string: ": hb\n\n")) }
+                        while !Task.isCancelled { try? await Task.sleep(for: .seconds(15)); cont.yield(ByteBuffer(string: ": hb\n\n")) }
                     }
                     for await ev in stream {
                         if let d = try? Self.encoder.encode(ev) { cont.yield(ByteBuffer(string: "data: \(String(decoding: d, as: UTF8.self))\n\n")) }
