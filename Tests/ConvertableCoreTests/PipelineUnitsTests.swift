@@ -70,6 +70,23 @@ final class EncodersTests: XCTestCase {
         XCTAssertEqual(Double(d.ms), Double(try Verifier.durationMs(src.path).ms), accuracy: 100)
         XCTAssertTrue(Fixtures.contains(out, marker: "iTunSMPB"))
     }
+    /// macOS 27's CoreAudio decoder writes an empty file, exit status 0, for FLAC frames whose header says
+    /// "sample rate / bit depth: see STREAMINFO" (a 2 s synthetic tone with every frame header rewritten that way;
+    /// `flac -t` passes it). Batch #16 lost a whole album to this before the fallback covered it.
+    func testFLACWithStreaminfoCodedFramesFallsBackToReferenceDecoder() throws {
+        guard Tools.locate("flac") != nil else { throw XCTSkip("flac not installed") }
+        let src = try XCTUnwrap(Bundle.module.url(forResource: "streaminfo-coded-frames", withExtension: "flac", subdirectory: "Resources"))
+        let tmp = try Fixtures.tempDir("enc0"); defer { try? FileManager.default.removeItem(at: tmp) }
+        let local = tmp.appendingPathComponent("in.flac").path
+        try FileManager.default.copyItem(atPath: src.path, toPath: local)
+        let out = tmp.appendingPathComponent("o.m4a").path
+        try AfconvertEncoder().encode(.ipodAAC, input: local, output: out, sourceChannels: 2)
+        XCTAssertEqual(Double(try Verifier.durationMs(out).ms), 2000, accuracy: 100)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tmp.appendingPathComponent("in.refdecoded.wav").path), "intermediate WAV cleaned up")
+        // The PCM decode used by the lame/flac backends takes the same detour.
+        let wav = try Decode.toWAV(local, channels: 2)
+        XCTAssertEqual(Double(try Verifier.durationMs(wav).ms), 2000, accuracy: 100)
+    }
     func testLameAndFlacBackends() throws {
         guard LameEncoder().isAvailable(), FlacEncoder().isAvailable() else { throw XCTSkip("lame/flac not installed") }
         let src = try Fixtures.first("flac", containing: "16BIT")

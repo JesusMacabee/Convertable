@@ -56,15 +56,33 @@ public struct AfconvertEncoder: Encoder {
     public func encode(_ spec: EncoderSpec, input: String, output: String, sourceChannels: Int) throws {
         guard let path = Tools.locate("afconvert") else { throw Tools.ToolError.failed("afconvert", status: 127, stderr: "not found") }
         let r = try Tools.run(path, arguments(spec, sourceChannels: sourceChannels) + [input, output], timeout: 900)
-        if r.status != 0, input.lowercased().hasSuffix(".flac"), let flac = Tools.locate("flac") {
-            // CoreAudio rejects some valid FLACs (e.g. unusual block sizes). The reference decoder does not.
-            let wav = (input as NSString).deletingPathExtension + ".refdecoded.wav"
+        if r.status != 0 || Encoders.decodedNothing(output), let wav = try Encoders.referenceDecodeIfFLAC(input) {
             defer { try? FileManager.default.removeItem(atPath: wav) }
-            try Encoders.check(try Tools.run(flac, ["-d", "--silent", "--force", "-o", wav, input], timeout: 900), flac)
             try Encoders.check(try Tools.run(path, arguments(spec, sourceChannels: sourceChannels) + [wav, output], timeout: 900), path)
             return
         }
         try Encoders.check(r, path)
+    }
+}
+
+extension Encoders {
+    /// CoreAudio's FLAC decoder rejects some valid files outright (unusual block sizes) and, on macOS 27, silently
+    /// writes an empty output for others: frames whose header defers the sample rate or bit depth to STREAMINFO
+    /// (legal, and what some non-reference encoders emit) decode to zero samples with exit status 0. Both cases
+    /// take the same way out: the reference `flac` decoder to WAV, then the encoder as before.
+    /// Returns the WAV path, or nil when the input isn't FLAC or `flac` isn't installed (the caller then reports
+    /// afconvert's own result).
+    static func referenceDecodeIfFLAC(_ input: String) throws -> String? {
+        guard input.lowercased().hasSuffix(".flac"), let flac = Tools.locate("flac") else { return nil }
+        let wav = (input as NSString).deletingPathExtension + ".refdecoded.wav"
+        try check(try Tools.run(flac, ["-d", "--silent", "--force", "-o", wav, input], timeout: 900), flac)
+        return wav
+    }
+
+    /// True when a freshly written audio file holds no samples (or can't be opened at all).
+    static func decodedNothing(_ output: String) -> Bool {
+        guard let d = try? Verifier.durationMs(output) else { return true }
+        return d.ms == 0
     }
 }
 
@@ -115,7 +133,12 @@ enum Decode {
         let out = (input as NSString).deletingPathExtension + ".decoded.wav"
         var args = ["-f", "WAVE", "-d", "LEI24"]
         if channels > 2 { args += ["-l", "Stereo"] }
-        try Encoders.check(try Tools.run(af, args + [input, out], timeout: 900), af)
+        let r = try Tools.run(af, args + [input, out], timeout: 900)
+        if r.status != 0 || Encoders.decodedNothing(out), let wav = try Encoders.referenceDecodeIfFLAC(input) {
+            try? FileManager.default.removeItem(atPath: out)
+            return wav
+        }
+        try Encoders.check(r, af)
         return out
     }
 }
