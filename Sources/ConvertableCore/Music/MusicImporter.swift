@@ -156,7 +156,11 @@ public struct MusicImporter: Sendable {
                 for item in p.items {
                     guard let pid = item.musicPersistentID else { continue }
                     do { try bridge.remove(persistentID: pid); out.removed += 1 }
-                    catch { if !"\(error)".contains("get") { remaining.append(item); out.failed += 1 } }
+                    catch {
+                        if "\(error)".contains("get") { continue }   // already gone
+                        remaining.append(item); out.failed += 1
+                        try? store.log("warn", "music", "remove from Music failed: \(error)", relPath: item.relPath)
+                    }
                 }
                 if remaining.isEmpty { try? store.setProposalState(p.id, "done") }
                 else { let json = String(decoding: (try? JSONEncoder().encode(remaining)) ?? Data("[]".utf8), as: UTF8.self); _ = try? store.db.run("UPDATE proposals SET items_json=? WHERE id=?", [.text(json), .integer(p.id)]) }
@@ -167,8 +171,11 @@ public struct MusicImporter: Sendable {
                     guard let pid = item.musicPersistentID else { continue }
                     do { try bridge.remove(persistentID: pid); out.removed += 1 }
                     catch {
-                        // Already gone from Music is fine; anything else is retried next time.
-                        if !"\(error)".contains("Can’t get") && !"\(error)".contains("Can't get") { remaining.append(item); out.failed += 1 }
+                        // Already gone from Music is fine; anything else is retried next time — and said so, because a
+                        // proposal that silently never closes is what this looked like before.
+                        if "\(error)".contains("Can’t get") || "\(error)".contains("Can't get") { continue }
+                        remaining.append(item); out.failed += 1
+                        try? store.log("warn", "music", "remove from Music failed: \(error)", relPath: item.relPath)
                     }
                 }
                 if remaining.isEmpty {

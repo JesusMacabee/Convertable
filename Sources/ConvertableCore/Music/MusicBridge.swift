@@ -80,12 +80,20 @@ public struct MusicBridge: Sendable {
     }
 
     /// Removes the track entry from the library. Files are never deleted by Music here — we manage them.
-    public func remove(persistentID: String) throws {
-        _ = try runner.run("""
+    /// Idempotent: a track that is already gone is not an error. (Deleting through a `whose` specifier that
+    /// matches nothing fails with "doesn't understand the delete message", -1708, not the "Can't get" text
+    /// a plain lookup gives, so the script checks first.) Returns false when there was nothing to delete.
+    @discardableResult
+    public func remove(persistentID: String) throws -> Bool {
+        let out = try runner.run("""
         tell application "Music"
-            delete (first track of library playlist 1 whose persistent ID is \(Self.quote(persistentID)))
+            set hits to (every track of library playlist 1 whose persistent ID is \(Self.quote(persistentID)))
+            if (count of hits) is 0 then return "gone"
+            delete (item 1 of hits)
+            return "deleted"
         end tell
         """, timeout: 60)
+        return out != "gone"
     }
 
     /// Every file track's persistent ID and path. Used to reconcile after a restart or a manual import.

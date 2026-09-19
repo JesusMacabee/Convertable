@@ -165,6 +165,38 @@ final class MusicPendingProcessingTests: XCTestCase {
         XCTAssertEqual(try store.db.scalar("SELECT SUM(music_refresh_pending)+SUM(music_relocate_pending) FROM outputs"), .integer(0))
         XCTAssertEqual(try store.proposal(id: pid)?.state, "done")
     }
+
+    /// The real case: the album's tracks had already left Music by the time the approved removal ran. Deleting through a
+    /// `whose` specifier that matches nothing fails with "doesn't understand the delete message" (-1708), not "Can't get",
+    /// so the proposal sat in "approved" forever with no log line. The bridge now checks first and reports "gone".
+    func testRemoveProposalClosesWhenTracksAreAlreadyGoneFromMusic() throws {
+        let store = try Store.inMemory()
+        let settings = Settings()
+        let pid = try store.insertProposal(kind: "remove", album: AlbumKey(artistDir: "Pink Floyd", albumDir: "DSOT"), title: "t", reason: "r",
+                                           items: [.init(outputID: nil, legacyID: nil, relPath: "Pink Floyd/DSOT/Side 1.m4a", musicPersistentID: "18DCA0632867A14A", bytes: 1, counterpartPersistentID: nil),
+                                                   .init(outputID: nil, legacyID: nil, relPath: "Pink Floyd/DSOT/Side 2.m4a", musicPersistentID: "44B0354F9CC1E30A", bytes: 1, counterpartPersistentID: nil)], now: 1)
+        try store.setProposalState(pid, "approved")
+        let m = MockRunner()
+        m.answers = [
+            { s in XCTAssertTrue(s.contains("count of hits")); return .success("gone") },
+            { s in XCTAssertTrue(s.contains("delete")); return .success("deleted") },
+        ]
+        let imp = MusicImporter(store: store, settings: settings, profile: .ipodClassic, bridge: MusicBridge(runner: m), gate: { .success(()) })
+        let r = imp.processPending(mirrorRoot: "/M", reviewer: Reviewer(store: store, mirrorRoot: "/M"))
+        XCTAssertEqual(r.failed, 0)
+        XCTAssertEqual(try store.proposal(id: pid)?.state, "done")
+
+        // A genuine failure is retried next time — and logged, instead of vanishing.
+        let pid2 = try store.insertProposal(kind: "remove", album: AlbumKey(artistDir: "Z", albumDir: "Q"), title: "t", reason: "r",
+                                            items: [.init(outputID: nil, legacyID: nil, relPath: "Z/Q/1.m4a", musicPersistentID: "P1", bytes: 1, counterpartPersistentID: nil)], now: 1)
+        try store.setProposalState(pid2, "approved")
+        m.answers = [{ _ in .failure(.script("Music got an error: AppleEvent timed out. (-1712)")) }]
+        let r2 = imp.processPending(mirrorRoot: "/M", reviewer: Reviewer(store: store, mirrorRoot: "/M"))
+        XCTAssertEqual(r2.failed, 1)
+        XCTAssertEqual(try store.proposal(id: pid2)?.state, "approved")
+        let logged = try store.db.query("SELECT message FROM activity WHERE category='music' AND message LIKE 'remove from Music failed%'") { $0.text(0) }
+        XCTAssertEqual(logged.count, 1)
+    }
 }
 
 final class TagPolicyTests: XCTestCase {
