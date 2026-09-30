@@ -151,7 +151,8 @@ form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 
     <h3>Current batch</h3>
     <div id="batchBody"><div class="empty">No batch running.</div></div>
     <div class="row" style="margin-top:10px">
-      <button id="btnScan">Scan now</button>
+      <button id="btnScan" title="Re-lists folders whose contents changed (new albums, added or removed files). Runs every 10 minutes anyway.">Scan now</button>
+      <button id="btnFullScan" title="Re-reads every file, so retags and rewrites inside existing folders are picked up. Runs nightly anyway; takes a few minutes.">Full scan</button>
       <button id="btnStop" class="danger" disabled>Stop after current tracks</button>
       <button id="btnNext" class="primary" disabled>Start next batch</button>
       <button id="btnImport">Import into Music now</button>
@@ -309,7 +310,7 @@ function renderStatus(s) {
   $('#btnStop').disabled = !s.batch;
   $('#btnNext').disabled = !!s.batch || !s.volumeAvailable || L.backlogAlbums === 0;
   $('#nextHint').textContent = s.batch ? '' : (L.backlogAlbums ? `Size mode, default budget — or pick artists on the Convert tab.` : 'Nothing eligible right now.');
-  $('#btnScan').disabled = !!s.scanInProgress || !s.volumeAvailable;
+  $('#btnScan').disabled = $('#btnFullScan').disabled = !!s.scanInProgress || !s.volumeAvailable;
 }
 function renderBatch(b) {
   const el = $('#batchBody');
@@ -345,6 +346,7 @@ function connect() {
   es.onerror = () => { es.close(); $('#stateText').textContent = 'reconnecting…'; setTimeout(connect, 3000); };
 }
 $('#btnScan').onclick = () => api('/scan', { method: 'POST', body: { full: false } }).then(renderStatus);
+$('#btnFullScan').onclick = () => api('/scan', { method: 'POST', body: { full: true } }).then(renderStatus);
 $('#btnStop').onclick = () => api('/stop', { method: 'POST' }).then(renderStatus);
 $('#btnImport').onclick = () => api('/music/import', { method: 'POST' }).then(renderStatus);
 $('#btnNext').onclick = () => api('/batch', { method: 'POST', body: { selection: { mode: { size: {} }, cap: settingsCache?.batchBudgetBytes ?? null, ignoreSettle: false }, exceedCap: false } }).then(renderStatus);

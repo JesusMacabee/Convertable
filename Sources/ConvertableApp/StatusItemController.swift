@@ -100,6 +100,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(start)
         }
         let scan = action("Scan now", #selector(scanNow)); scan.isEnabled = s.volumeAvailable && s.scanInProgress == nil; menu.addItem(scan)
+        let full = action("Full Scan (re-read every file)", #selector(fullScanNow)); full.isEnabled = scan.isEnabled; menu.addItem(full)
         let imp = action("Import into Music now", #selector(importNow)); imp.isEnabled = s.musicPending > 0; menu.addItem(imp)
         menu.addItem(.separator())
         menu.addItem(action("Open Dashboard", #selector(openDashboard), key: "d"))
@@ -150,6 +151,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
     }
     @objc private func scanNow() { Task { try? await controller.perform(.scan(full: false)) } }
+    @objc private func fullScanNow() { Task { try? await controller.perform(.scan(full: true)) } }
     @objc private func importNow() { Task { try? await controller.perform(.importNow) } }
     @objc private func openDashboard() { if let u = URL(string: dashboardURL) { NSWorkspace.shared.open(u) } }
     @objc private func toggleLaunchAtLogin() {

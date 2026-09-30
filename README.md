@@ -57,7 +57,7 @@ Scripts/test.sh
 ## Day to day
 
 1. Rip or download into the lossless tree and tag with Picard.
-2. The next scan audits the tags. Tagged albums join the backlog; untagged ones appear under *Needs tagging*.
+2. The next scan audits the tags. Tagged albums join the backlog; untagged ones appear under *Needs tagging*. New folders and files show up within ten minutes; retags inside existing files are seen by the nightly full scan, or right away with *Full scan* on the Overview tab.
 3. Click *Start next batch* (size mode) or pick artists on the Convert tab, preview, start. Watch progress in the menu bar or the dashboard.
 4. Finished albums are added to Music automatically when the right library is open.
 5. Check the Review tab now and then for removal, replacement and dead-entry proposals; approve individually or all at once.
