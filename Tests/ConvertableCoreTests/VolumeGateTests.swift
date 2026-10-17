@@ -3,7 +3,7 @@ import XCTest
 
 final class VolumeGateTests: XCTestCase {
     func testExpectedVolume() {
-        XCTAssertEqual(VolumeGate.expectedVolume(for: "/Volumes/PLeX/Music/New Tunes"), "/Volumes/PLeX")
+        XCTAssertEqual(VolumeGate.expectedVolume(for: "/Volumes/Media/Music/Lossless"), "/Volumes/Media")
         XCTAssertNil(VolumeGate.expectedVolume(for: "/Users/me/Music"))
     }
 

@@ -16,6 +16,8 @@ final class WebServerTests: XCTestCase {
     override func setUpWithError() throws {
         settings = Settings()
         settings.web.token = "test-token-123"
+        // A fresh Settings is unconfigured on purpose; these tests want a configured controller (nothing here touches the disk).
+        settings.sourceRoot = "/Volumes/Test/Lossless"; settings.mirrorRoot = "/Volumes/Test/Mirror"; settings.musicLibraryPath = "/Volumes/Test/Music Library.musiclibrary"
         settings.requireMusicBrainz = false   // fixture rows carry no tags; the gate has its own tests
         settings.tagDerivedPaths = false
         let store = try Store.inMemory()
@@ -116,6 +118,19 @@ final class WebServerTests: XCTestCase {
             try await client.execute(uri: "/api/batch", method: .post, headers: authMut, body: body) { r in
                 XCTAssertEqual(r.status, .conflict)
                 XCTAssertTrue(String(buffer: r.body).contains("nothing eligible"), String(buffer: r.body))
+            }
+        }
+    }
+    func testSetupCannotFinishWithoutTheThreeLocations() async throws {
+        try await server.buildApplication().test(.router) { client in
+            var s = Settings(); s.web.token = "test-token-123"   // locations left empty, as on a fresh install
+            let body = ByteBuffer(bytes: try JSONEncoder().encode(s))
+            try await client.execute(uri: "/api/setup/finish", method: .post, headers: authMut, body: body) { r in
+                XCTAssertEqual(r.status, .badRequest)
+                XCTAssertTrue(String(buffer: r.body).contains("source folder"), String(buffer: r.body))
+            }
+            try await client.execute(uri: "/api/settings", method: .get, headers: auth) { r in
+                XCTAssertFalse(try JSONDecoder().decode(Settings.self, from: Data(buffer: r.body)).setupCompleted)
             }
         }
     }

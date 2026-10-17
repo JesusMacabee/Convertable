@@ -159,6 +159,9 @@ public struct WebServer: Sendable {
         }
         api.post("setup/finish") { req, ctx in
             var s = try await req.decode(as: Settings.self, context: ctx)
+            guard s.isConfigured else {
+                throw HTTPError(.badRequest, message: "Setup needs the " + s.missingLocations.joined(separator: ", ") + " before it can finish.")
+            }
             s.setupCompleted = true
             try await self.controller.updateSettings(s)
             try await self.controller.perform(.scan(full: true))

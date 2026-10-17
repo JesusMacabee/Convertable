@@ -7,7 +7,9 @@ public enum Setup {
 
     public static func dependencies() -> [Dependency] {
         let af = Tools.afconvert, lame = Tools.lame, flac = Tools.flac
-        let tagPresent = FileManager.default.fileExists(atPath: "/opt/homebrew/lib/libtag_c.dylib") || Bundle.main.privateFrameworksURL.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("libtag_c.2.dylib").path) } == true
+        // Homebrew lives in /opt/homebrew on Apple silicon and /usr/local on Intel; the .app bundles its own copy.
+        let tagPresent = ["/opt/homebrew/lib/libtag_c.dylib", "/usr/local/lib/libtag_c.dylib"].contains { FileManager.default.fileExists(atPath: $0) }
+            || Bundle.main.privateFrameworksURL.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("libtag_c.2.dylib").path) } == true
         return [
             .init(name: "afconvert (Apple AAC / ALAC encoder)", present: af.available, detail: af.path ?? "part of macOS", required: true, fix: nil),
             .init(name: "TagLib (tag reading/writing)", present: tagPresent, detail: tagPresent ? "available" : "not found", required: true, fix: tagPresent ? nil : "brew install taglib"),

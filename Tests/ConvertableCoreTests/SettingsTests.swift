@@ -31,8 +31,22 @@ final class SettingsTests: XCTestCase {
 
     func testLibraryURLStringMatchesMusicFormat() {
         var s = Settings()
-        s.musicLibraryPath = "/Volumes/PLeX/Music/AAC Music/Music Library.musiclibrary"
-        XCTAssertEqual(s.musicLibraryFileURLString, "file:///Volumes/PLeX/Music/AAC%20Music/Music%20Library.musiclibrary/")
+        s.musicLibraryPath = "/Volumes/Media/AAC Music/Music Library.musiclibrary"
+        XCTAssertEqual(s.musicLibraryFileURLString, "file:///Volumes/Media/AAC%20Music/Music%20Library.musiclibrary/")
+        XCTAssertEqual(Settings().musicLibraryFileURLString, "", "an unset library must not resolve to the working directory")
+    }
+
+    /// A fresh install must not inherit anyone's library layout: the locations start empty and the app
+    /// reports itself unconfigured until the wizard fills them in.
+    func testFreshSettingsHaveNoLocations() {
+        let s = Settings()
+        XCTAssertEqual(s.sourceRoot, ""); XCTAssertEqual(s.mirrorRoot, ""); XCTAssertEqual(s.musicLibraryPath, "")
+        XCTAssertEqual(s.legacyMediaRoots, [])
+        XCTAssertFalse(s.isConfigured)
+        XCTAssertEqual(s.missingLocations, ["source folder", "mirror folder", "Music library"])
+        var done = s; done.sourceRoot = "/a"; done.mirrorRoot = "/b"; done.musicLibraryPath = "/c.musiclibrary"
+        XCTAssertTrue(done.isConfigured)
+        XCTAssertEqual(Doctor.run(settings: s, benchmark: false).first?.name, "Setup")
     }
 }
 

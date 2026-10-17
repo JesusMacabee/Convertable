@@ -65,6 +65,8 @@ public actor AppController {
     }
 
     private func schedulerTick() async {
+        // Nothing to watch until the wizard has named the folders.
+        guard settings.isConfigured else { return }
         // Volume gate first; everything else waits on it.
         // The probe can block on a stalled mount; keep it off the actor's executor.
         let root = settings.sourceRoot
@@ -190,7 +192,7 @@ public actor AppController {
 
     /// Drains complete albums into Music when the configured library is open. Never runs two at once.
     public func importIntoMusic(force: Bool = false) {
-        guard musicTask == nil, let importer = makeImporter() else { return }
+        guard settings.isConfigured, musicTask == nil, let importer = makeImporter() else { return }
         if let reason = musicImportDisabled, !force {
             _ = reason; return
         }
@@ -274,7 +276,7 @@ public actor AppController {
     }
 
     public func scan(full: Bool) {
-        guard scanTask == nil else { return }
+        guard scanTask == nil, settings.isConfigured else { return }
         let scanner = LibraryScanner(root: settings.sourceRoot, store: store)
         state = .scanning
         scanProgressText = full ? "full scan starting" : "incremental scan"
@@ -342,6 +344,7 @@ public actor AppController {
     /// instead of silently reporting the batch that was already running.
     @discardableResult
     public func startBatch(_ selection: Selection, exceedCap: Bool) -> String? {
+        guard settings.isConfigured else { return "not set up yet — finish the setup wizard first" }
         guard batchTask == nil else { return "a batch is already running — stop it or wait for it to finish" }
         stopRequested = false
         var sel = selection

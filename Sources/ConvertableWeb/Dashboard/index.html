@@ -568,7 +568,7 @@ const wizard = (() => {
         break; }
       case 2: {
         const home = draft.musicLibraryPath.replace(/\/[^/]*\.musiclibrary\/?$/, '');
-        b.innerHTML = `<p>Where converted files are written. Keep it <b>beside</b> the Music library, never inside Music’s media folder.</p>` + field('mirrorRoot', 'Mirror folder', draft.mirrorRoot || (home + '/Lossless Mirror')) + `<button id="probeMir">Check folder</button><div id="mirOut"></div>`;
+        b.innerHTML = `<p>Where converted files are written. Keep it <b>beside</b> the Music library, never inside Music’s media folder.</p>` + field('mirrorRoot', 'Mirror folder', draft.mirrorRoot || (home ? home + '/Lossless Mirror' : ''), 'e.g. /Volumes/NAS/Music/AAC Music/Lossless Mirror') + `<button id="probeMir">Check folder</button><div id="mirOut"></div>`;
         $('#probeMir').onclick = async () => { collect(); const p = await api('/setup/mirror', { method: 'POST', body: { path: draft.mirrorRoot, musicLibraryPath: draft.musicLibraryPath } }); probes.mirror = p;
           $('#mirOut').innerHTML = (p.errors.length ? p.errors.map(e => result(false, e)).join('') : result(true, `Writable · ${fmtBytes(p.freeBytes)} free`)) + warn(p.warnings); };
         break; }

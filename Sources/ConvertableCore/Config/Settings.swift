@@ -35,11 +35,11 @@ public struct WebSettings: Codable, Equatable, Sendable {
 
 /// Everything the user can configure. Persisted as JSON in Application Support.
 public struct Settings: Codable, Equatable, Sendable {
-    // Locations
-    public var sourceRoot: String = "/Volumes/PLeX/Music/New Tunes"
-    public var mirrorRoot: String = "/Volumes/PLeX/Music/AAC Music/Lossless Mirror"
+    // Locations. Empty until the setup wizard fills them in; nothing scans, converts or imports before then.
+    public var sourceRoot: String = ""
+    public var mirrorRoot: String = ""
     /// The `.musiclibrary` bundle the iPod is paired to.
-    public var musicLibraryPath: String = "/Volumes/PLeX/Music/AAC Music/Music Library.musiclibrary"
+    public var musicLibraryPath: String = ""
     /// Optional server URL (smb://, afp://, nfs://) used only when `autoMount` is on.
     public var shareURL: String? = nil
     public var autoMount: Bool = false
@@ -48,7 +48,7 @@ public struct Settings: Codable, Equatable, Sendable {
     public var importMethod: ImportMethod = .appleScript
 
     // Legacy library (pre-existing lossy files in the Music library, not derived from the source tree)
-    public var legacyMediaRoots: [String] = ["/Volumes/PLeX/Music/AAC Music/Music/Music", "/Volumes/PLeX/Music/AAC Music/Music/Media.localized/Music"]
+    public var legacyMediaRoots: [String] = []
     public var supersedeEnabled: Bool = true
 
     // Scanning
@@ -145,8 +145,21 @@ public struct Settings: Codable, Equatable, Sendable {
         try data.write(to: url, options: .atomic)
     }
 
+    /// The three locations without which the app has nothing to do.
+    public var isConfigured: Bool { !sourceRoot.isEmpty && !mirrorRoot.isEmpty && !musicLibraryPath.isEmpty }
+
+    /// What is still missing, for the wizard and the doctor.
+    public var missingLocations: [String] {
+        var m: [String] = []
+        if sourceRoot.isEmpty { m.append("source folder") }
+        if mirrorRoot.isEmpty { m.append("mirror folder") }
+        if musicLibraryPath.isEmpty { m.append("Music library") }
+        return m
+    }
+
     /// Music stores the open library as a file URL string in its preferences.
     public var musicLibraryFileURLString: String {
+        guard !musicLibraryPath.isEmpty else { return "" }
         var url = URL(fileURLWithPath: musicLibraryPath, isDirectory: true).absoluteString
         if !url.hasSuffix("/") { url += "/" }
         return url

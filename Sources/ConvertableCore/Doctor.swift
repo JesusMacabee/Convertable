@@ -12,6 +12,10 @@ public enum Doctor {
     public static func run(settings: Settings, benchmark: Bool = true) -> [DoctorCheck] {
         var out: [DoctorCheck] = []
 
+        if !settings.isConfigured {
+            out.append(.init(name: "Setup", result: .fail,
+                             detail: "not configured yet: " + settings.missingLocations.joined(separator: ", ") + " — finish the setup wizard in the dashboard"))
+        }
         // Source volume
         let src = VolumeGate.check(root: settings.sourceRoot, timeout: 15)
         switch src {
