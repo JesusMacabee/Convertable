@@ -30,7 +30,7 @@ If you find a bug, open an issue. The fix will almost certainly be written the s
 
 ## What it does
 
-- **Watches a folder tree** on a mounted share. It works over SMB, AFP, or NFS and reads the protocol from the mount table to decide how hard to push the share. There's a full scan every night, an incremental scan every ten minutes, and both resume if the share drops. Nothing is marked missing while the volume is unmounted.
+- **Watches a folder tree**, local or on a mounted share. Over SMB, AFP, or NFS it reads the protocol from the mount table to decide how hard to push the share; a folder on a local disk just runs faster. There's a full scan every night, an incremental scan every ten minutes, and both resume if a share drops. Nothing is marked missing while a volume is unmounted.
 - **Converts with afconvert** to 256 kbps constrained-VBR AAC at 44.1 kHz, the iTunes Plus profile, with gapless info and Sound Check. Lossy files that ended up in the lossless tree are copied as they are, never re-encoded. Output formats are profiles, so ALAC, MP3 (via lame) and FLAC (via flac) exist too.
 - **Carries the metadata.** afconvert writes no tags, so TagLib copies every tag into the MP4, MusicBrainz IDs included, and embeds one cover downscaled to 600 px. A verifier checks duration, sample rate, the key tags, and the artwork before a file is published.
 - **Wants MusicBrainz tags first.** An album is only converted once every track has MusicBrainz IDs. Albums that don't are listed under Needs tagging, so you run Picard once up front instead of fixing the copy later. Folder and file names come from the tags.
