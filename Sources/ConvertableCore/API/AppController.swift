@@ -256,7 +256,7 @@ public actor AppController {
         case let .startBatch(sel, exceed): if let why = startBatch(sel, exceedCap: exceed) { throw ControllerError.refused(why) }
         case .stop: requestStop(); if batch != nil { state = .paused }
         case let .pin(dir, pinned): try store.pin(dir, pinned: pinned)
-        case let .ignoreAlbum(artist, album, ignored): try store.ignore(AlbumKey(artistDir: artist, albumDir: album), ignored: ignored); backlogCache = nil; await publishStatus()
+        case let .ignoreAlbum(artist, album, release, ignored): try store.ignore(AlbumKey(artistDir: artist, albumDir: album, release: release), ignored: ignored); backlogCache = nil; await publishStatus()
         case .importNow: importIntoMusic()
         case .enableMusicImport: importIntoMusic(force: true)
         case let .approve(id): try await approve(id)
@@ -315,6 +315,7 @@ public actor AppController {
             guard let self else { return }
             if let r = try? await audit.run(shareIO: io), r.audited + r.failed > 0 {
                 try? self.store.log("info", "tags", "tag audit: \(r.audited) files read, \(r.withMBID) with MusicBrainz IDs, \(r.failed) unreadable")
+                if let split = try? self.store.refreshReleaseGroups(), split > 0 { try? self.store.log("info", "tags", "\(split) files regrouped by MusicBrainz release (folders holding several releases)") }
             }
             if derived, let profile = Profile.named(profileID) {
                 let moved = await Reviewer(store: self.store, mirrorRoot: mirror).repathMirror(profile: profile, shareIO: io)
@@ -496,10 +497,18 @@ public actor AppController {
 
     public func albums(artist: String) -> [AlbumRow] {
         ((try? store.albumSummaries(artist: artist)) ?? []).map {
-            AlbumRow(artistDir: $0.key.artistDir, albumDir: $0.key.albumDir, name: $0.displayAlbum ?? ($0.key.albumDir.isEmpty ? "(loose files)" : $0.key.albumDir),
+            AlbumRow(artistDir: $0.key.artistDir, albumDir: $0.key.albumDir, name: Self.albumName($0),
                      tracks: $0.tracks, bytes: $0.bytes, mirrored: $0.mirrored, lossless: $0.losslessTracks, lossy: $0.lossyTracks,
-                     status: $0.mirrored == 0 ? "none" : ($0.mirrored == $0.tracks ? "complete" : "partial"), firstSeen: $0.firstSeen, untagged: $0.untagged, unaudited: $0.unaudited, stale: $0.stale, ignored: $0.ignored)
+                     status: $0.mirrored == 0 ? "none" : ($0.mirrored == $0.tracks ? "complete" : "partial"), firstSeen: $0.firstSeen, untagged: $0.untagged, unaudited: $0.unaudited, stale: $0.stale, ignored: $0.ignored,
+                     release: $0.key.release)
         }
+    }
+
+    /// What a row is called: the album tag when it is one release among several in its folder, the folder otherwise.
+    static func albumName(_ s: Store.AlbumSummary) -> String {
+        if s.key.isUntaggedRemainder { return "\(s.key.albumDir) — files without MusicBrainz tags" }
+        if s.key.release != nil, let t = s.displayAlbum, !t.isEmpty { return t }
+        return s.key.albumDir.isEmpty ? "(loose files)" : s.key.albumDir
     }
 
     func makePlanner(_ profile: Profile) -> Planner {
@@ -519,7 +528,7 @@ public actor AppController {
                     return acc + t.estimatedOutBytes
                 }
             }
-            return .init(artistDir: a.key.artistDir, albumDir: a.key.albumDir, artist: a.displayArtist, album: a.displayAlbum, tracks: a.tracks.count, bytesIn: a.bytesIn, estimatedOut: est, pinned: a.pinned)
+            return .init(artistDir: a.key.artistDir, albumDir: a.key.albumDir, artist: a.displayArtist, album: a.displayAlbum, tracks: a.tracks.count, bytesIn: a.bytesIn, estimatedOut: est, pinned: a.pinned, release: a.key.release)
         }
         let albums = plan.albums.map(row), overflow = plan.overflow.map(row)
         // Time: the rate this installation has actually achieved (learned from finished batches, newest weighted most),

@@ -119,9 +119,9 @@ public struct WebServer: Sendable {
             return try self.json(await self.controller.artists())
         }
         api.post("albums/ignore") { req, ctx in
-            struct Body: Decodable { var artistDir: String; var albumDir: String; var ignored: Bool }
+            struct Body: Decodable { var artistDir: String; var albumDir: String; var release: String?; var ignored: Bool }
             let b = try await req.decode(as: Body.self, context: ctx)
-            try await self.controller.perform(.ignoreAlbum(artistDir: b.artistDir, albumDir: b.albumDir, ignored: b.ignored))
+            try await self.controller.perform(.ignoreAlbum(artistDir: b.artistDir, albumDir: b.albumDir, release: b.release, ignored: b.ignored))
             return try self.json(await self.controller.albums(artist: b.artistDir))
         }
         api.post("alerts/dismiss") { req, ctx in

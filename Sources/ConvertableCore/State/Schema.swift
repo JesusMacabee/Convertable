@@ -217,6 +217,22 @@ public enum Schema {
             PRIMARY KEY (artist_dir, album_dir)
         );
         """,
+        // v9 — a folder holding several MusicBrainz releases is several albums: release_group splits it
+        // ('' = ordinary folder, else the release id, or 'untagged' for files without one); ignores can name a release
+        """
+        ALTER TABLE source_files ADD COLUMN release_group TEXT NOT NULL DEFAULT '';
+        CREATE INDEX source_files_release_group ON source_files(artist_dir, album_dir, release_group);
+        CREATE TABLE ignored_albums_v9 (
+            artist_dir  TEXT NOT NULL,
+            album_dir   TEXT NOT NULL,
+            release     TEXT NOT NULL DEFAULT '',
+            ignored_at  REAL NOT NULL,
+            PRIMARY KEY (artist_dir, album_dir, release)
+        );
+        INSERT INTO ignored_albums_v9 (artist_dir, album_dir, release, ignored_at) SELECT artist_dir, album_dir, '', ignored_at FROM ignored_albums;
+        DROP TABLE ignored_albums;
+        ALTER TABLE ignored_albums_v9 RENAME TO ignored_albums;
+        """ + Store.refreshReleaseGroupsSQL + ";",
     ]
 
     public static var currentVersion: Int { migrations.count }

@@ -384,19 +384,19 @@ function renderArtists() {
       <td><a href="#" data-expand="${esc(a.dir)}">${expanded.has(a.dir) ? '▾' : '▸'} ${esc(a.name)}</a>${a.name !== a.dir ? ` <span class="sub">${esc(a.dir)}</span>` : ''}</td>
       <td class="num">${a.albums}</td><td class="num">${a.tracks}</td><td class="num">${fmtBytes(a.bytes)}</td>
       <td class="status-${a.status}">${a.status === 'none' ? '—' : a.status === 'complete' ? '✓ complete' : `${a.mirrored}/${a.tracks}`}${a.stale ? ` <span class="chip" title="mirrored, but the source or tag policy changed — queue to re-sync">${a.stale} stale</span>` : ''}${a.untagged ? ` <span class="chip" title="tracks without MusicBrainz IDs — held back until tagged">${a.untagged} untagged</span>` : ''}</td></tr>` +
-      (expanded.has(a.dir) ? (albumsCache[a.dir] || []).map(al => { const key = a.dir + ' ' + al.albumDir; const adone = al.status === 'complete' && !al.stale; const ign = !!al.ignored; if (adone || ign) selAlbums.delete(key); return `<tr class="album ${adone ? 'done' : ''} ${ign ? 'ignored' : ''}" data-dir="${esc(a.dir)}">
-        <td><input type="checkbox" ${dis} ${adone ? 'disabled title="Already mirrored"' : ign ? 'disabled title="Ignored"' : ''} ${!adone && !ign && (selAlbums.has(key) || selArtists.has(a.dir)) ? 'checked' : ''} ${selArtists.has(a.dir) ? 'disabled' : ''} data-alb="${esc(a.dir)}" data-albdir="${esc(al.albumDir)}"></td>
-        <td><span class="ign ${ign ? 'on' : ''}" data-ign="${esc(a.dir)}" data-igndir="${esc(al.albumDir)}" title="${ign ? 'Ignored — click to include this album again' : 'Ignore this album: left out of batches, backlog and needs-tagging counts; existing mirror files stay'}">⊘</span></td>
-        <td>${esc(al.name)} <span class="sub">${al.lossless ? al.lossless + ' lossless' : ''}${al.lossy ? (al.lossless ? ' · ' : '') + al.lossy + ' copy-through' : ''}</span></td>
+      (expanded.has(a.dir) ? (albumsCache[a.dir] || []).map(al => { const key = a.dir + ' ' + al.albumDir + ' ' + (al.release || ''); const adone = al.status === 'complete' && !al.stale; const ign = !!al.ignored; if (adone || ign) selAlbums.delete(key); return `<tr class="album ${adone ? 'done' : ''} ${ign ? 'ignored' : ''}" data-dir="${esc(a.dir)}">
+        <td><input type="checkbox" ${dis} ${adone ? 'disabled title="Already mirrored"' : ign ? 'disabled title="Ignored"' : ''} ${!adone && !ign && (selAlbums.has(key) || selArtists.has(a.dir)) ? 'checked' : ''} ${selArtists.has(a.dir) ? 'disabled' : ''} data-alb="${esc(a.dir)}" data-albdir="${esc(al.albumDir)}" data-albrel="${esc(al.release || '')}"></td>
+        <td><span class="ign ${ign ? 'on' : ''}" data-ign="${esc(a.dir)}" data-igndir="${esc(al.albumDir)}" data-ignrel="${esc(al.release || '')}" title="${ign ? 'Ignored — click to include this album again' : 'Ignore this album: left out of batches, backlog and needs-tagging counts; existing mirror files stay'}">⊘</span></td>
+        <td>${esc(al.name)}${al.release ? ` <span class="chip" title="This folder holds several MusicBrainz releases; each is its own album here">in ${esc(al.albumDir)}</span>` : ''} <span class="sub">${al.lossless ? al.lossless + ' lossless' : ''}${al.lossy ? (al.lossless ? ' · ' : '') + al.lossy + ' copy-through' : ''}</span></td>
         <td></td><td class="num">${al.tracks}</td><td class="num">${fmtBytes(al.bytes)}</td>
         <td class="status-${al.status}">${al.ignored ? '<span class="chip">ignored</span> ' : ''}${al.status === 'none' ? '—' : al.status === 'complete' ? '✓' : `${al.mirrored}/${al.tracks}`}${al.stale ? ` <span class="chip" title="source or tag policy changed — queue to re-sync">${al.stale} stale</span>` : ''}${al.untagged ? ` <span class="chip">needs tags</span>` : (al.unaudited ? ' <span class="chip">auditing</span>' : '')}</td></tr>`; }).join('') : '');
   }).join('') || '<tr><td colspan="7" class="empty">No artists match.</td></tr>';
   $$('input[data-partial]', tb).forEach(c => c.indeterminate = true);
   $$('[data-expand]', tb).forEach(a => a.onclick = async e => { e.preventDefault(); const d = a.dataset.expand; if (expanded.has(d)) expanded.delete(d); else { expanded.add(d); if (!albumsCache[d]) albumsCache[d] = await api('/albums?artist=' + encodeURIComponent(d)); } renderArtists(); });
-  $$('[data-ign]', tb).forEach(s => s.onclick = async () => { const d = s.dataset.ign, al = s.dataset.igndir; const cur = (albumsCache[d] || []).find(x => x.albumDir === al); albumsCache[d] = await api('/albums/ignore', { method: 'POST', body: { artistDir: d, albumDir: al, ignored: !(cur && cur.ignored) } }); artists = await api('/artists'); renderArtists(); updateSummary(); renderStatus(await api('/status')); });
+  $$('[data-ign]', tb).forEach(s => s.onclick = async () => { const d = s.dataset.ign, al = s.dataset.igndir, rel = s.dataset.ignrel || ''; const cur = (albumsCache[d] || []).find(x => x.albumDir === al && (x.release || '') === rel); albumsCache[d] = await api('/albums/ignore', { method: 'POST', body: { artistDir: d, albumDir: al, release: rel || null, ignored: !(cur && cur.ignored) } }); artists = await api('/artists'); renderArtists(); updateSummary(); renderStatus(await api('/status')); });
   $$('[data-pin]', tb).forEach(s => s.onclick = async () => { const a = artists.find(x => x.dir === s.dataset.pin); artists = await api('/pin', { method: 'POST', body: { artistDir: a.dir, pinned: !a.pinned } }); renderArtists(); });
   $$('input[data-art]', tb).forEach(c => c.onchange = () => { if (c.checked) { selArtists.add(c.dataset.art); [...selAlbums].filter(k => k.startsWith(c.dataset.art + ' ')).forEach(k => selAlbums.delete(k)); } else selArtists.delete(c.dataset.art); renderArtists(); updateSummary(); });
-  $$('input[data-alb]', tb).forEach(c => c.onchange = () => { const key = c.dataset.alb + ' ' + c.dataset.albdir; if (c.checked) selAlbums.add(key); else selAlbums.delete(key); renderArtists(); updateSummary(); });
+  $$('input[data-alb]', tb).forEach(c => c.onchange = () => { const key = c.dataset.alb + ' ' + c.dataset.albdir + ' ' + (c.dataset.albrel || ''); if (c.checked) selAlbums.add(key); else selAlbums.delete(key); renderArtists(); updateSummary(); });
 }
 function currentSelection() {
   const cap = capBytes();
@@ -404,8 +404,8 @@ function currentSelection() {
   if (mode === 'everything') return { mode: { everything: {} }, cap, ignoreSettle: false };
   if (selArtists.size && !selAlbums.size) return { mode: { artists: { _0: [...selArtists] } }, cap, ignoreSettle: false };
   // Mixed or album-only selections become an album list.
-  const keys = [...selAlbums].map(k => { const [artistDir, albumDir] = k.split(' '); return { artistDir, albumDir }; });
-  for (const a of selArtists) for (const al of (albumsCache[a] || [])) if (!(al.status === 'complete' && !al.stale) && !al.ignored) keys.push({ artistDir: a, albumDir: al.albumDir });
+  const keys = [...selAlbums].map(k => { const [artistDir, albumDir, release] = k.split(' '); return release ? { artistDir, albumDir, release } : { artistDir, albumDir }; });
+  for (const a of selArtists) for (const al of (albumsCache[a] || [])) if (!(al.status === 'complete' && !al.stale) && !al.ignored) keys.push(al.release ? { artistDir: a, albumDir: al.albumDir, release: al.release } : { artistDir: a, albumDir: al.albumDir });
   return { mode: { albums: { _0: keys } }, cap, ignoreSettle: false };
 }
 const drawer = { open() { $('#drawer').classList.add('open'); $('#scrim').hidden = false; }, close() { $('#drawer').classList.remove('open'); $('#scrim').hidden = true; } };
@@ -415,7 +415,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') drawer.close
 function renderCart() {
   const items = [];
   for (const d of selArtists) { const a = artists.find(x => x.dir === d); items.push({ kind: 'artist', key: d, label: a ? a.name : d, sub: a ? `${a.albums} albums · ${a.tracks} tracks` : '', bytes: a ? a.bytes : 0 }); }
-  for (const k of selAlbums) { const [d, al] = k.split(' '); const a = (albumsCache[d] || []).find(x => x.albumDir === al); items.push({ kind: 'album', key: k, label: a ? a.name : al, sub: `${artists.find(x => x.dir === d)?.name || d}${a ? ` · ${a.tracks} tracks` : ''}`, bytes: a ? a.bytes : 0 }); }
+  for (const k of selAlbums) { const [d, al, rel] = k.split(' '); const a = (albumsCache[d] || []).find(x => x.albumDir === al && (x.release || '') === (rel || '')); items.push({ kind: 'album', key: k, label: a ? a.name : al, sub: `${artists.find(x => x.dir === d)?.name || d}${a ? ` · ${a.tracks} tracks` : ''}`, bytes: a ? a.bytes : 0 }); }
   const n = items.length;
   $('#cartCount').textContent = mode === 'artists' ? n : '·';
   $('#cartBtn').classList.toggle('is-empty', mode === 'artists' && n === 0);
@@ -431,7 +431,7 @@ function updateSummary() {
   if (mode === 'size') text = cap ? `Oldest eligible albums up to ${fmtBytes(cap)}` : 'Oldest eligible albums, no cap — set one or use Everything';
   else if (mode === 'everything') text = cap ? `Everything eligible, as much as fits in ${fmtBytes(cap)}` : 'Everything eligible';
   else {
-    const bytes = [...selArtists].reduce((s, d) => s + (artists.find(a => a.dir === d)?.bytes || 0), 0) + [...selAlbums].reduce((s, k) => { const [d, al] = k.split(' '); return s + ((albumsCache[d] || []).find(x => x.albumDir === al)?.bytes || 0); }, 0);
+    const bytes = [...selArtists].reduce((s, d) => s + (artists.find(a => a.dir === d)?.bytes || 0), 0) + [...selAlbums].reduce((s, k) => { const [d, al, rel] = k.split(' '); return s + ((albumsCache[d] || []).find(x => x.albumDir === al && (x.release || '') === (rel || ''))?.bytes || 0); }, 0);
     const n = selArtists.size + selAlbums.size;
     text = n ? `${selArtists.size ? selArtists.size + ' artist(s)' : ''}${selArtists.size && selAlbums.size ? ' + ' : ''}${selAlbums.size ? selAlbums.size + ' album(s)' : ''} · ${fmtBytes(bytes)} of source` + (cap && bytes > cap ? ` · exceeds ${fmtBytes(cap)} cap` : '') : 'Nothing selected';
   }

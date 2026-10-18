@@ -72,12 +72,15 @@ public struct AlbumRow: Codable, Equatable, Sendable {
     public var artistDir: String, albumDir: String, name: String, tracks: Int, bytes: Int64, mirrored: Int, lossless: Int, lossy: Int, status: String, firstSeen: Double
     public var untagged: Int = 0, unaudited: Int = 0, stale: Int = 0
     public var ignored: Bool = false
+    /// Set when the folder holds several MusicBrainz releases and this row is one of them ("untagged" = the files without one).
+    public var release: String? = nil
     public var done: Bool { status == "complete" && stale == 0 }
 }
 
 public struct PlanPreview: Codable, Equatable, Sendable {
     public struct Album: Codable, Equatable, Sendable {
         public var artistDir: String, albumDir: String, artist: String, album: String, tracks: Int, bytesIn: Int64, estimatedOut: Int64, pinned: Bool
+        public var release: String? = nil
     }
     public var selection: Selection
     public var albums: [Album]
@@ -105,7 +108,7 @@ public enum Command: Codable, Sendable {
     case startBatch(Selection, exceedCap: Bool)
     case stop
     case pin(artistDir: String, pinned: Bool)
-    case ignoreAlbum(artistDir: String, albumDir: String, ignored: Bool)
+    case ignoreAlbum(artistDir: String, albumDir: String, release: String?, ignored: Bool)
     case importNow
     case enableMusicImport
     case approve(id: Int64)

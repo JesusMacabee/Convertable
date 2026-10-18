@@ -102,8 +102,8 @@ public struct SupersedeMatcher {
             // Mirror tracks with their tags and Music IDs.
             let mirror = try store.db.query("""
                 SELECT s.rel_path, o.music_persistent_id, s.tag_hash FROM source_files s JOIN outputs o ON o.source_id=s.id
-                WHERE s.artist_dir=? AND s.album_dir=? AND s.status='active' AND o.verify_ok=1 ORDER BY s.rel_path
-                """, [.text(a.key.artistDir), .text(a.key.albumDir)]) { ($0.text(0)!, $0.text(1)) }
+                WHERE s.artist_dir=? AND s.album_dir=? AND (?='' OR s.release_group=?) AND s.status='active' AND o.verify_ok=1 ORDER BY s.rel_path
+                """, [.text(a.key.artistDir), .text(a.key.albumDir), .text(a.key.release ?? ""), .text(a.key.release ?? "")]) { ($0.text(0)!, $0.text(1)) }
             // Confidence: track counts within one, and most legacy titles present among the mirror's file names / titles.
             let countOK = abs(legacy.count - mirror.count) <= 1
             let mirrorTitles = Set(mirror.map { Norm.key(($0.0 as NSString).lastPathComponent) })

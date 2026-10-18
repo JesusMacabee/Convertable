@@ -43,6 +43,7 @@ public final class Store: @unchecked Sendable {
 
     public func finishScan(_ id: Int64, now: Double = Date().timeIntervalSince1970) throws {
         try db.run("UPDATE scans SET finished_at=?, checkpoint=NULL WHERE id=?", [.real(now), .integer(id)])
+        try refreshReleaseGroups()   // files came and went; folders may have become (or stopped being) multi-release
     }
 
     /// Abandons an unfinished scan so its id no longer counts as the "current" scan (e.g. after a volume loss).
@@ -150,8 +151,27 @@ public final class Store: @unchecked Sendable {
     }
 
     public func sourceFiles(in album: AlbumKey, includeMissing: Bool = false) throws -> [SourceFile] {
-        try db.query("SELECT * FROM source_files WHERE artist_dir=? AND album_dir=? \(includeMissing ? "" : "AND status='active'") ORDER BY rel_path",
-                     [.text(album.artistDir), .text(album.albumDir)], Store.sourceFile)
+        try db.query("SELECT * FROM source_files WHERE artist_dir=? AND album_dir=? AND (?='' OR release_group=?) \(includeMissing ? "" : "AND status='active'") ORDER BY rel_path",
+                     [.text(album.artistDir), .text(album.albumDir), .text(album.release ?? ""), .text(album.release ?? "")], Store.sourceFile)
+    }
+
+    /// Recomputes `release_group` for every file: '' in a folder with at most one MusicBrainz release, otherwise the
+    /// release id (or 'untagged'). Cheap enough to run after every scan and tag audit. Returns the number of rows changed.
+    static let refreshReleaseGroupsSQL = """
+        UPDATE source_files SET release_group = CASE
+            WHEN (SELECT COUNT(DISTINCT s2.mbid_release) FROM source_files s2
+                  WHERE s2.artist_dir = source_files.artist_dir AND s2.album_dir = source_files.album_dir
+                    AND s2.status = 'active' AND s2.mbid_release IS NOT NULL) > 1
+            THEN COALESCE(mbid_release, 'untagged') ELSE '' END
+        WHERE release_group IS NOT (CASE
+            WHEN (SELECT COUNT(DISTINCT s2.mbid_release) FROM source_files s2
+                  WHERE s2.artist_dir = source_files.artist_dir AND s2.album_dir = source_files.album_dir
+                    AND s2.status = 'active' AND s2.mbid_release IS NOT NULL) > 1
+            THEN COALESCE(mbid_release, 'untagged') ELSE '' END)
+        """
+    @discardableResult
+    public func refreshReleaseGroups() throws -> Int {
+        try db.run(Store.refreshReleaseGroupsSQL)
     }
 
     public func setCodec(id: Int64, codec: String, kind: FileKind) throws {
@@ -173,7 +193,7 @@ public final class Store: @unchecked Sendable {
                    tagAlbumArtist: r.text("tag_albumartist"), tagAlbum: r.text("tag_album"),
                    hasMBID: r.int("has_mbid").map { $0 != 0 }, tagTitle: r.text("tag_title"), tagTrack: r.int("tag_track").map(Int.init),
                    tagDisc: r.int("tag_disc").map(Int.init), tagDiscTotal: r.int("tag_disctotal").map(Int.init), tagYear: r.int("tag_year").map(Int.init),
-                   mbidRelease: r.text("mbid_release"))
+                   mbidRelease: r.text("mbid_release"), releaseGroup: r.text("release_group") ?? "")
     }
 
     /// Files whose tags have never been audited, or changed since they were.
@@ -220,8 +240,8 @@ public final class Store: @unchecked Sendable {
     /// All outputs for an album's sources in one query (the planner used to ask per track).
     public func outputs(in album: AlbumKey) throws -> [Int64: OutputFile] {
         let rows = try db.query("""
-            SELECT o.* FROM outputs o JOIN source_files s ON s.id = o.source_id WHERE s.artist_dir=? AND s.album_dir=?
-            """, [.text(album.artistDir), .text(album.albumDir)], Store.output)
+            SELECT o.* FROM outputs o JOIN source_files s ON s.id = o.source_id WHERE s.artist_dir=? AND s.album_dir=? AND (?='' OR s.release_group=?)
+            """, [.text(album.artistDir), .text(album.albumDir), .text(album.release ?? ""), .text(album.release ?? "")], Store.output)
         return Dictionary(rows.map { ($0.sourceID, $0) }, uniquingKeysWith: { a, _ in a })
     }
 
@@ -347,13 +367,13 @@ public final class Store: @unchecked Sendable {
     // MARK: Ignored albums
 
     public func ignoredAlbums() throws -> Set<AlbumKey> {
-        Set(try db.query("SELECT artist_dir, album_dir FROM ignored_albums") { AlbumKey(artistDir: $0.text(0)!, albumDir: $0.text(1)!) })
+        Set(try db.query("SELECT artist_dir, album_dir, release FROM ignored_albums") { AlbumKey(artistDir: $0.text(0)!, albumDir: $0.text(1)!, release: ($0.text(2) ?? "").isEmpty ? nil : $0.text(2)) })
     }
     /// An ignored album is left out of every plan, the backlog and the needs-tagging counts, and out of its artist's
     /// totals (so an artist whose only unmirrored albums are ignored shows as complete). Its mirror copies are untouched.
     public func ignore(_ key: AlbumKey, ignored: Bool, now: Double = Date().timeIntervalSince1970) throws {
-        if ignored { try db.run("INSERT OR IGNORE INTO ignored_albums (artist_dir, album_dir, ignored_at) VALUES (?,?,?)", [.text(key.artistDir), .text(key.albumDir), .real(now)]) }
-        else { try db.run("DELETE FROM ignored_albums WHERE artist_dir=? AND album_dir=?", [.text(key.artistDir), .text(key.albumDir)]) }
+        if ignored { try db.run("INSERT OR IGNORE INTO ignored_albums (artist_dir, album_dir, release, ignored_at) VALUES (?,?,?,?)", [.text(key.artistDir), .text(key.albumDir), .text(key.release ?? ""), .real(now)]) }
+        else { try db.run("DELETE FROM ignored_albums WHERE artist_dir=? AND album_dir=? AND release=?", [.text(key.artistDir), .text(key.albumDir), .text(key.release ?? "")]) }
     }
 
     // MARK: Aggregates for the planner and the picker
@@ -387,20 +407,25 @@ public final class Store: @unchecked Sendable {
                    SUM(CASE WHEN o.id IS NOT NULL AND ((COALESCE(o.tags_written_at, o.encoded_at) IS NOT NULL AND s.stable_since > COALESCE(o.tags_written_at, o.encoded_at)) OR o.tag_policy < \(TagPolicy.version)) THEN 1 ELSE 0 END) stale,
                    SUM(CASE WHEN s.has_mbid = 0 THEN 1 ELSE 0 END) untagged,
                    SUM(CASE WHEN s.has_mbid IS NULL THEN 1 ELSE 0 END) unaudited,
-                   (i.artist_dir IS NOT NULL) ignored
+                   (MAX(i.artist_dir) IS NOT NULL) ignored,
+                   s.release_group
             FROM source_files s
             LEFT JOIN outputs o ON o.source_id = s.id AND o.verify_ok = 1
-            LEFT JOIN ignored_albums i ON i.artist_dir = s.artist_dir AND i.album_dir = s.album_dir
+            LEFT JOIN ignored_albums i ON i.artist_dir = s.artist_dir AND i.album_dir = s.album_dir AND (i.release = '' OR i.release = s.release_group)
             WHERE s.status='active' AND s.kind != 'other'
             """
         var params: [Database.Value] = []
         if let artist { sql += " AND s.artist_dir=?"; params.append(.text(artist)) }
-        sql += " GROUP BY s.artist_dir, s.album_dir ORDER BY s.artist_dir, s.album_dir"
+        sql += " GROUP BY s.artist_dir, s.album_dir, s.release_group ORDER BY s.artist_dir, s.album_dir, s.release_group"
         return try db.query(sql, params) { r in
-            AlbumSummary(key: AlbumKey(artistDir: r.text(0)!, albumDir: r.text(1)!), tracks: Int(r.int(2)!), bytes: r.int(3)!,
+            let group = r.text(16) ?? ""
+            let key = AlbumKey(artistDir: r.text(0)!, albumDir: r.text(1)!, release: group.isEmpty ? nil : group)
+            // In a split folder the album tag names the release; the untagged remainder has no name of its own.
+            let display: String? = key.release == nil ? r.text(11) : (key.isUntaggedRemainder ? nil : r.text(11))
+            return AlbumSummary(key: key, tracks: Int(r.int(2)!), bytes: r.int(3)!,
                          losslessTracks: Int(r.int(4)!), lossyTracks: Int(r.int(5)!), mirrored: Int(r.int(6)!), stale: Int(r.int(12) ?? 0),
                          firstSeen: r.double(7)!, lastChange: r.double(8)!, minObservations: Int(r.int(9)!),
-                         displayArtist: r.text(10), displayAlbum: r.text(11), untagged: Int(r.int(13) ?? 0), unaudited: Int(r.int(14) ?? 0),
+                         displayArtist: r.text(10), displayAlbum: display, untagged: Int(r.int(13) ?? 0), unaudited: Int(r.int(14) ?? 0),
                          ignored: (r.int(15) ?? 0) != 0)
         }
     }
@@ -421,13 +446,13 @@ public final class Store: @unchecked Sendable {
     public func artistSummaries() throws -> [ArtistSummary] {
         let pins = try pinnedArtists()
         return try db.query("""
-            SELECT s.artist_dir, COUNT(DISTINCT s.album_dir) albums, COUNT(*) tracks, SUM(s.size) bytes,
+            SELECT s.artist_dir, COUNT(DISTINCT s.album_dir || char(0) || s.release_group) albums, COUNT(*) tracks, SUM(s.size) bytes,
                    SUM(CASE WHEN o.id IS NOT NULL THEN 1 ELSE 0 END) mirrored,
                    SUM(CASE WHEN s.has_mbid = 0 THEN 1 ELSE 0 END) untagged,
                    SUM(CASE WHEN o.id IS NOT NULL AND ((COALESCE(o.tags_written_at, o.encoded_at) IS NOT NULL AND s.stable_since > COALESCE(o.tags_written_at, o.encoded_at)) OR o.tag_policy < \(TagPolicy.version)) THEN 1 ELSE 0 END) stale
             FROM source_files s
             LEFT JOIN outputs o ON o.source_id = s.id AND o.verify_ok = 1
-            LEFT JOIN ignored_albums i ON i.artist_dir = s.artist_dir AND i.album_dir = s.album_dir
+            LEFT JOIN ignored_albums i ON i.artist_dir = s.artist_dir AND i.album_dir = s.album_dir AND (i.release = '' OR i.release = s.release_group)
             WHERE s.status='active' AND s.kind != 'other' AND i.artist_dir IS NULL
             GROUP BY s.artist_dir ORDER BY s.artist_dir COLLATE NOCASE
             """) { r in
@@ -449,7 +474,7 @@ public final class Store: @unchecked Sendable {
                    SUM(status='active' AND kind='lossless'), SUM(status='active' AND kind='lossy'),
                    COALESCE(SUM(CASE WHEN status='active' THEN size ELSE 0 END),0),
                    COUNT(DISTINCT CASE WHEN status='active' THEN artist_dir END),
-                   COUNT(DISTINCT CASE WHEN status='active' THEN artist_dir || '/' || album_dir END)
+                   COUNT(DISTINCT CASE WHEN status='active' THEN artist_dir || '/' || album_dir || char(0) || release_group END)
             FROM source_files
             """) { r in (r.int(0) ?? 0, r.int(1) ?? 0, r.int(2) ?? 0, r.int(3) ?? 0, r.int(4) ?? 0, r.int(5) ?? 0, r.int(6) ?? 0) }[0]
         let mirrored = try db.scalar("SELECT COUNT(*) FROM outputs WHERE verify_ok=1")

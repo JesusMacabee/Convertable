@@ -199,10 +199,12 @@ struct Ignore: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Ignore an album (left out of batches, backlog and needs-tagging counts; mirror copies untouched), or include it again with --remove.")
     @Argument var artist: String
     @Argument var album: String
+    @Option(name: .long, help: "In a folder holding several MusicBrainz releases: the release id to ignore (or 'untagged' for the files without one).") var release: String?
     @Flag(name: .long) var remove = false
     func run() throws {
-        try openStore().ignore(AlbumKey(artistDir: artist, albumDir: album), ignored: !remove)
-        print(remove ? "included again: \(artist) — \(album)" : "ignored: \(artist) — \(album)")
+        try openStore().ignore(AlbumKey(artistDir: artist, albumDir: album, release: release), ignored: !remove)
+        let what = "\(artist) — \(album)" + (release.map { " [\($0)]" } ?? "")
+        print(remove ? "included again: \(what)" : "ignored: \(what)")
     }
 }
 

@@ -31,20 +31,35 @@ public struct SourceFile: Equatable, Sendable, Identifiable {
     public var tagDiscTotal: Int? = nil
     public var tagYear: Int? = nil
     public var mbidRelease: String? = nil
+    /// "" for a normal folder. In a folder that holds several MusicBrainz releases (a dump of live shows, say) it is
+    /// the release id, or `AlbumKey.untaggedRelease` for the files without one, so each release is its own album.
+    public var releaseGroup: String = ""
 
     public var fileName: String { (relPath as NSString).lastPathComponent }
     public var stem: String { (fileName as NSString).deletingPathExtension }
-    public var albumKey: AlbumKey { AlbumKey(artistDir: artistDir, albumDir: albumDir) }
+    public var albumKey: AlbumKey { AlbumKey(artistDir: artistDir, albumDir: albumDir, release: releaseGroup.isEmpty ? nil : releaseGroup) }
 }
 
 /// An album is a (artist directory, album directory) pair — the unit of settling, batching and Music import.
+/// An album is a source folder — unless that folder holds several MusicBrainz releases, in which case each
+/// release is an album of its own and `release` says which (nil = the whole folder).
 public struct AlbumKey: Hashable, Codable, Sendable, Comparable {
     public var artistDir: String
     public var albumDir: String
-    public init(artistDir: String, albumDir: String) { self.artistDir = artistDir; self.albumDir = albumDir }
+    public var release: String? = nil
+    /// The `release` of the files in a split folder that carry no MusicBrainz release id.
+    public static let untaggedRelease = "untagged"
+    public init(artistDir: String, albumDir: String, release: String? = nil) { self.artistDir = artistDir; self.albumDir = albumDir; self.release = release }
     public var relPath: String { albumDir.isEmpty ? artistDir : artistDir + "/" + albumDir }
+    /// The folder this key lives in, whichever release it names.
+    public var folder: AlbumKey { AlbumKey(artistDir: artistDir, albumDir: albumDir) }
+    public var isUntaggedRemainder: Bool { release == AlbumKey.untaggedRelease }
+    /// True when `self` names `other` or the whole folder `other` lives in.
+    public func covers(_ other: AlbumKey) -> Bool { self == other || (release == nil && folder == other.folder) }
     public static func < (a: AlbumKey, b: AlbumKey) -> Bool {
-        a.artistDir == b.artistDir ? a.albumDir < b.albumDir : a.artistDir < b.artistDir
+        if a.artistDir != b.artistDir { return a.artistDir < b.artistDir }
+        if a.albumDir != b.albumDir { return a.albumDir < b.albumDir }
+        return (a.release ?? "") < (b.release ?? "")
     }
 }
 

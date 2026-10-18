@@ -28,8 +28,8 @@ public struct Planner {
             let set = Set(list)
             summaries = summaries.filter { set.contains($0.key.artistDir) }
         case let .albums(list):
-            let set = Set(list)
-            summaries = summaries.filter { set.contains($0.key) }
+            // A key naming a whole folder also selects every release-split album inside it.
+            summaries = summaries.filter { s in list.contains { $0.covers(s.key) } }
         case .size, .everything:
             break
         }
