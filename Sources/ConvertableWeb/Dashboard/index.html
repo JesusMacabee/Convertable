@@ -98,6 +98,8 @@ tr.ignored td { opacity: .45; } tr.ignored input[type=checkbox] { cursor: not-al
 .log { font-family: var(--mono); font-size: 12px; }
 .log .info { color: var(--ink); } .log .warn { color: var(--warn); } .log .error { color: var(--err); } .log .debug { color: var(--muted); }
 .log .t { color: var(--muted); }
+.log .day { margin: 10px 0 4px; padding-bottom: 2px; border-bottom: 1px solid var(--line); color: var(--muted); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.log .day:first-child { margin-top: 0; }
 form.settings label { display: grid; grid-template-columns: 220px 1fr; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
 form.settings label span.help { grid-column: 2; color: var(--muted); font-size: 12px; margin-top: -4px; }
 .hint { color: var(--muted); font-size: 12.5px; }
@@ -327,10 +329,29 @@ function renderBatch(b) {
     ${b.currentAlbum ? `<div style="margin-top:6px"><b>${esc(b.currentAlbum)}</b><div class="chips">${b.currentTracks.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div></div>` : ''}
     ${b.backlogAlbums ? `<div class="sub" style="margin-top:6px">After this batch: ${b.backlogAlbums} albums / ${fmtBytes(b.backlogBytes)} remain.</div>` : ''}`;
 }
+// Activity lists are newest first. A header marks each change of calendar day so a time alone is never ambiguous.
+const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+const dayLabel = t => {
+  const d = new Date(t * 1000), now = new Date();
+  const days = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+};
+const timeOnly = t => new Date(t * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+function renderLog(rows, empty, withCategory) {
+  let lastDay = null, out = '';
+  for (const a of rows) {
+    const day = startOfDay(new Date(a.at * 1000));
+    if (day !== lastDay) { out += `<div class="day">${dayLabel(a.at)}</div>`; lastDay = day; }
+    out += `<div class="${a.level}"><span class="t">${timeOnly(a.at)}</span> ${withCategory ? `<span class="t">[${esc(a.category)}]</span> ` : ''}${esc(a.message)}${a.relPath ? ` <span class="t">— ${esc(a.relPath)}</span>` : ''}</div>`;
+  }
+  return out || `<div class="empty">${empty}</div>`;
+}
 const recent = [];
 function pushActivity(a) {
   recent.unshift(a); if (recent.length > 40) recent.pop();
-  $('#recent').innerHTML = recent.map(a => `<div class="${a.level}"><span class="t">${new Date(a.at * 1000).toLocaleTimeString()}</span> ${esc(a.message)}${a.relPath ? ` <span class="t">— ${esc(a.relPath)}</span>` : ''}</div>`).join('') || '<div class="empty">Nothing yet.</div>';
+  $('#recent').innerHTML = renderLog(recent, 'Nothing yet.', false);
 }
 function connect() {
   const es = new EventSource('/events');
@@ -502,7 +523,7 @@ $('#actSearch').oninput = () => { clearTimeout(window._t); window._t = setTimeou
 $('#actRefresh').onclick = loadActivity;
 async function loadActivity() {
   const rows = await api(`/activity?level=${actLevel}&search=${encodeURIComponent($('#actSearch').value)}&limit=400`);
-  $('#actLog').innerHTML = rows.map(a => `<div class="${a.level}"><span class="t">${fmtTime(a.at)}</span> <span class="t">[${a.category}]</span> ${esc(a.message)}${a.relPath ? ` <span class="t">— ${esc(a.relPath)}</span>` : ''}</div>`).join('') || '<div class="empty">No activity matches.</div>';
+  $('#actLog').innerHTML = renderLog(rows, 'No activity matches.', true);
 }
 
 // ---- settings
